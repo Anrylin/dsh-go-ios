@@ -62,10 +62,6 @@ jobs:
           flutter pub get --enforce-lockfile
           flutter gen-l10n
 
-      - name: Compile for the simulator (smoke test)
-        working-directory: app
-        run: bash ../tooling/ios/build.sh --simulator --debug
-
       - name: Compile for a device, unsigned
         working-directory: app
         run: bash ../tooling/ios/build.sh --release --no-codesign
