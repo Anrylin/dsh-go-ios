@@ -1,0 +1,128 @@
+# Builds an unsigned .ipa for DSH Go (iOS) on a macOS runner.
+#
+# Nothing here needs secrets: `--no-codesign` produces an unsigned app, and the
+# packaging step turns it into a Payload/Runner.app zip that any sideloading
+# tool (Sideloadly, AltStore, SideStore, TrollStore) can sign with the device
+# owner's own Apple ID. Signing, provisioning and installing stay on the phone
+# owner's side.
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: 'Flutter stable version'
+        required: false
+        default: '3.47.7'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      FLUTTER_VERSION: ${{ inputs.flutter_version || '3.47.7' }}
+      FLUTTER_SHA256: dd9da574c3168460550117eb0e8dd0313ae934fabf64a82a6d557fff5fd1422e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Show the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphone || true
+
+      - name: Install Flutter
+        run: |
+          archive="flutter_macos_arm64_${FLUTTER_VERSION}-stable.zip"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/$archive"
+          echo "$FLUTTER_SHA256  $RUNNER_TEMP/$archive" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/$archive" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve dependencies
+        run: |
+          flutter --version
+          # The iOS project ships no Podfile; its plugins are Swift packages.
+          flutter config --enable-swift-package-manager
+          python3 app/tool/l10n_merge.py --no-gen
+          cd app
+          flutter pub get --enforce-lockfile
+          flutter gen-l10n
+
+      - name: Compile for the simulator (smoke test)
+        working-directory: app
+        run: bash ../tooling/ios/build.sh --simulator --debug
+
+      - name: Compile for a device, unsigned
+        working-directory: app
+        run: bash ../tooling/ios/build.sh --release --no-codesign
+
+      - name: Package the IPA
+        run: |
+          set -euo pipefail
+          APP="app/build/ios/iphoneos/Runner.app"
+          test -d "$APP" || { echo "::error::no Runner.app at $APP"; ls -la app/build/ios || true; exit 1; }
+          test -f "$APP/Runner" || { echo "::error::Runner.app has no executable"; exit 1; }
+
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qry "$GITHUB_WORKSPACE/dsh-go-ios-unsigned.ipa" Payload
+          cd "$GITHUB_WORKSPACE"
+
+          ls -lh dsh-go-ios-unsigned.ipa
+          shasum -a 256 dsh-go-ios-unsigned.ipa | tee dsh-go-ios-unsigned.ipa.sha256
+
+          # Sanity: the archive must contain the app bundle and its executable.
+          unzip -l dsh-go-ios-unsigned.ipa | grep -q 'Payload/Runner.app/Runner' \
+            || { echo "::error::IPA is missing Payload/Runner.app/Runner"; exit 1; }
+          unzip -l dsh-go-ios-unsigned.ipa | grep -q 'Payload/Runner.app/Info.plist' \
+            || { echo "::error::IPA is missing Payload/Runner.app/Info.plist"; exit 1; }
+
+          {
+            echo "### Unsigned IPA built"
+            echo ""
+            echo '```'
+            cat dsh-go-ios-unsigned.ipa.sha256
+            echo '```'
+            echo ""
+            echo "Sign it with your own Apple ID before installing (7 days for a free account)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-ios-unsigned
+          path: |
+            dsh-go-ios-unsigned.ipa
+            dsh-go-ios-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish a release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="ipa-$(date -u +%Y%m%d-%H%M%S)"
+          gh release create "$tag" \
+            --title "DSH Go iOS unsigned $tag" \
+            --notes "Unsigned build from ${GITHUB_SHA}. Sign with your own Apple ID before installing.
+
+          SHA256: \`$(cut -d' ' -f1 dsh-go-ios-unsigned.ipa.sha256)\`" \
+            dsh-go-ios-unsigned.ipa dsh-go-ios-unsigned.ipa.sha256
