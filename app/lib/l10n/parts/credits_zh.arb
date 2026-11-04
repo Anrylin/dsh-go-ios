@@ -1,0 +1,43 @@
+{
+  "creditsTitle": "余额 / 积分",
+  "creditsFooter": "只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。",
+  "creditsEnable": "点宠物显示余额",
+  "creditsEnableSubtitle": "轻点宠物时弹出积分卡",
+  "creditsBase": "面板地址",
+  "creditsToken": "只读令牌",
+  "creditsPreview": "预览积分卡",
+  "creditsNotSet": "先在宠物设置里填面板地址和只读令牌。",
+  "creditsNotSetShort": "未填写",
+  "creditsFailed": "读取失败：{error}",
+  "@creditsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "creditsTotal": "合计 {points} 积分",
+  "@creditsTotal": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      }
+    }
+  },
+  "creditsAccounts": "{count} 个账号",
+  "@creditsAccounts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "creditsSnapshotAt": "登记于 {time}",
+  "@creditsSnapshotAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
+}

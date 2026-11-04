@@ -29,6 +29,7 @@ import '../../pets/pet_signals.dart';
 import '../../pets/pet_state.dart';
 import '../../state/chat_state.dart';
 import '../../state/hosts_state.dart';
+import '../../state/credits_state.dart';
 import '../../state/sessions_state.dart';
 import '../../state/ui_mode_state.dart';
 import '../chat/widgets/approval_card.dart';
@@ -36,6 +37,7 @@ import '../chat/widgets/question_card.dart';
 import '../common/discard_guard.dart';
 import '../theme/theme.dart';
 import 'pet_bubble.dart';
+import 'pet_credits_sheet.dart';
 import 'pet_menu.dart';
 import 'pet_perch.dart';
 import 'pet_sprite.dart';
@@ -754,6 +756,10 @@ class PetLayerState extends ConsumerState<PetLayer> with TickerProviderStateMixi
     HapticFeedback.selectionClick();
     final left = details.localPosition.dx < pack.anchorX * _scale;
     _play(pack.reaction(left ? 'tapLeft' : 'tapRight'));
+    // 配置了余额面板时，同一拍把积分卡弹出来（数据有缓存，连点不刷）。
+    if (ref.read(creditsConfigProvider).configured) {
+      unawaited(showCreditsSheet(context));
+    }
   }
 
   void _onDragStart(DragStartDetails details) {

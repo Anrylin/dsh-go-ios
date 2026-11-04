@@ -17,6 +17,7 @@ import '../settings/settings_widgets.dart';
 import '../theme/app_icons.dart';
 import '../shell/page_frame.dart';
 import 'overlay_settings_tile.dart';
+import 'credits_settings_section.dart';
 import 'pet_picker.dart';
 
 /// 设置 › 宠物: the chosen pet (or 不显示) on the right; opens
@@ -91,6 +92,8 @@ class PetSettingsPage extends ConsumerWidget {
               ),
               // App 外显示 (the overlay), Android's own.
               if (ref.watch(androidSystemFeaturesProvider)) const PetOverlaySettingsSection(),
+              // 余额 / 积分 (the WorkBuddy panel): 点宠物时显示。
+              const CreditsSettingsSection(),
             ],
           ),
         ),

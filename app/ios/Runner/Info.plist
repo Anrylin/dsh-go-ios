@@ -148,6 +148,16 @@
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!-- The points panel may be reached over plain HTTP on a bare IP; App
+		     Transport Security refuses that unless the host is named here. -->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>117.72.34.46</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to DSH on a computer or server you choose.</string>

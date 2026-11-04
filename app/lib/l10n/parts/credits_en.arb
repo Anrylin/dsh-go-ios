@@ -1,0 +1,43 @@
+{
+  "creditsTitle": "Balance / points",
+  "creditsFooter": "Read-only endpoint: the panel's /api/accounts/credits-snapshot. The token stays on this phone.",
+  "creditsEnable": "Show the balance when the pet is tapped",
+  "creditsEnableSubtitle": "A tap on the pet opens the points card",
+  "creditsBase": "Panel address",
+  "creditsToken": "Read-only token",
+  "creditsPreview": "Preview the points card",
+  "creditsNotSet": "Fill in the panel address and read-only token in the pet settings first.",
+  "creditsNotSetShort": "Not set",
+  "creditsFailed": "Could not read: {error}",
+  "@creditsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "creditsTotal": "{points} points",
+  "@creditsTotal": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      }
+    }
+  },
+  "creditsAccounts": "{count} accounts",
+  "@creditsAccounts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "creditsSnapshotAt": "registered {time}",
+  "@creditsSnapshotAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
+}
