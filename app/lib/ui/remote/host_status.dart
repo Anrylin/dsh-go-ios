@@ -39,6 +39,18 @@ HostStatusView watchHostStatus(WidgetRef ref, HostRef host) {
     return HostStatusView(view.tone, view.label);
   }
   final status = ref.watch(hostLinkStatusProvider(host)).value ?? HostLinkStatus.idle;
+  // 有一条活着的连接就是「已连接」。
+  //
+  // 连线对象是 autoDispose 的:抽屉、设置、网页版各自 watch 一次,重建时可能
+  // 换成新实例,而旧的实例交出去的 client 还在跑。新实例从第一步(连接服务器)
+  // 起步,于是页脚一直显示「正在连接」,人却早就连上了。连接本身是事实,
+  // 状态文字要跟着事实走。
+  if (!status.isConnected) {
+    final connection = ref.watch(activeConnectionProvider).value;
+    if (connection != null && !connection.isLocal && connection.hostId == host.id) {
+      return HostStatusView(StatusTone.ok, appL10n.remoteConnected);
+    }
+  }
   return HostStatusView.ofLink(status);
 }
 

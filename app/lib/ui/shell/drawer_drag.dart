@@ -84,6 +84,20 @@ class DrawerDragRecognizer extends OneSequenceGestureRecognizer {
   @protected
   double endVelocity(PointerEvent event) => _velocity?.getVelocity().pixelsPerSecond.dx ?? 0;
 
+  /// 抽屉只在左侧这条带子里起手,向右滑才算「拉开」。
+  ///
+  /// 对话里的表格、代码块、图表自己横向滚动,它们的识别器和这里抢同一根手指:
+  /// 本识别器 8px 就表态,比 `Scrollable` 的 hit slop 早,横滑一下表格就被
+  /// 抽屉赢走 —— 于是「想向右滚表格」变成「拉出抽屉」。改成整屏可起手时,
+  /// 这个抢占无解;限制起手位置后,表格怎么滑都归它自己,想开抽屉从左边缘
+  /// 拉,和别人家 App 一致。
+  ///
+  /// 抽屉已经开着时不设限:这时左右都由抽屉持有,往里推回去哪儿起手都行。
+  double edgeZone = 0;
+
+  /// 这次手势落下的横坐标(相对本识别器所在区域)。
+  double _downX = 0;
+
   Offset _accum = Offset.zero;
   bool _accepted = false;
   VelocityTracker? _velocity;
@@ -93,6 +107,7 @@ class DrawerDragRecognizer extends OneSequenceGestureRecognizer {
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
+    _downX = event.localPosition.dx;
     _accum = Offset.zero;
     _accepted = false;
     _velocity = VelocityTracker.withKind(event.kind);
@@ -123,6 +138,12 @@ class DrawerDragRecognizer extends OneSequenceGestureRecognizer {
       // 关着时只认向右 —— 向左那是翻页,让给 PageView。
       final open = isOpen();
       final towards = _accum.dx * openingSign;
+      // 起手不在边缘带里:交给手指下面的横滑内容(表格、代码块、图表)。
+      if (!open && edgeZone > 0 && _downX > edgeZone) {
+        resolve(GestureDisposition.rejected);
+        stopTrackingPointer(event.pointer);
+        return;
+      }
       if (open || towards > 0) {
         if (!open && !opensAfter(towards, event.kind)) return;
         _accepted = true;

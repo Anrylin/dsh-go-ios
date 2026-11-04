@@ -231,7 +231,13 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     });
   }
 
-  /// The drawer's swipe (right to open, left to push back).
+  /// How far from the left edge a swipe may start and still open the drawer.
+///
+/// Wide enough for a thumb reaching in from the side, narrow enough that a
+/// rightward drag over a table or code block never turns into the drawer.
+const double kDrawerEdgeZone = 32;
+
+/// The drawer's swipe (right to open, left to push back).
   Map<Type, GestureRecognizerFactory> get _drawerGestures => {
     DrawerDragRecognizer: GestureRecognizerFactoryWithHandlers<DrawerDragRecognizer>(
       () => DrawerDragRecognizer(
@@ -239,6 +245,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
         onStart: () => _onDragStart(_drawer),
         onDelta: (dx) => _onDragDelta(_drawer, _drawerWidth(context), dx),
         onEnd: (velocity) => _onDragEnd(_drawer, _drawerWidth(context), velocity),
+        // 左侧起手区:表格、代码块横滑不再被抽屉抢走(见 edgeZone 的注释)。
+        edgeZone: kDrawerEdgeZone,
         debugOwner: this,
       ),
       (_) {},
