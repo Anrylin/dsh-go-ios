@@ -15,4 +15,11 @@ if [ "$status" -ne 0 ]; then
     print line
   }' "$log" | awk '!seen[$0]++' | cut -c1-600 | head -10 | sed -e 's/%/%25/g' -e 's/^/::error::/'
 fi
+if [ "$status" -ne 0 ]; then
+  # The annotations above are capped and filtered; the raw tail is what tells a
+  # signing error from a compilation error. Print it so the run log is enough.
+  echo "::group::raw flutter build ios output (last 80 lines)"
+  tail -n 80 "$log"
+  echo "::endgroup::"
+fi
 exit "$status"
