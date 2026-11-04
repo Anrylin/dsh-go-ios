@@ -40,6 +40,7 @@ class DrawerDragRecognizer extends OneSequenceGestureRecognizer {
     required this.onStart,
     required this.onDelta,
     required this.onEnd,
+    this.edgeZone = 0,
     super.debugOwner,
   });
 
@@ -93,7 +94,7 @@ class DrawerDragRecognizer extends OneSequenceGestureRecognizer {
   /// 拉,和别人家 App 一致。
   ///
   /// 抽屉已经开着时不设限:这时左右都由抽屉持有,往里推回去哪儿起手都行。
-  double edgeZone = 0;
+  final double edgeZone;
 
   /// 这次手势落下的横坐标(相对本识别器所在区域)。
   double _downX = 0;
