@@ -1369,6 +1369,7 @@
   "creditsTotal": "{points} points",
   "creditsAccounts": "{count} accounts",
   "creditsSnapshotAt": "registered {time}",
+  "creditsRefresh": "Refresh",
   "engineNewChatDefaultsLast": "New chat defaults (last choice)",
   "engineNewChatDefaultsFixed": "New chat defaults (fixed)",
   "engineNewChatUseLast": "Last choice",

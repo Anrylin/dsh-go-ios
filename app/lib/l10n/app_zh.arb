@@ -2895,6 +2895,7 @@
       }
     }
   },
+  "creditsRefresh": "刷新",
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
   "engineNewChatDefaultsFixed": "新对话默认（固定）",
   "engineNewChatUseLast": "沿用上次",

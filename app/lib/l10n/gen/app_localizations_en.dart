@@ -4758,6 +4758,57 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get creditsTitle => 'Balance / points';
+
+  @override
+  String get creditsFooter =>
+      'Read-only endpoint: the panel\'s /api/accounts/credits-snapshot. The token stays on this phone.';
+
+  @override
+  String get creditsEnable => 'Show the balance when the pet is tapped';
+
+  @override
+  String get creditsEnableSubtitle => 'A tap on the pet opens the points card';
+
+  @override
+  String get creditsBase => 'Panel address';
+
+  @override
+  String get creditsToken => 'Read-only token';
+
+  @override
+  String get creditsPreview => 'Preview the points card';
+
+  @override
+  String get creditsNotSet => 'Fill in the panel address and read-only token in the pet settings first.';
+
+  @override
+  String get creditsNotSetShort => 'Not set';
+
+  @override
+  String creditsFailed(String error) {
+    return 'Could not read: $error';
+  }
+
+  @override
+  String creditsTotal(int points) {
+    return '$points points';
+  }
+
+  @override
+  String creditsAccounts(int count) {
+    return '$count accounts';
+  }
+
+  @override
+  String creditsSnapshotAt(String time) {
+    return 'registered $time';
+  }
+
+  @override
+  String get creditsRefresh => 'Refresh';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

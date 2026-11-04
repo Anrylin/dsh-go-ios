@@ -39,5 +39,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "creditsRefresh": "刷新"
 }

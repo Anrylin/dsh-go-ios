@@ -4468,6 +4468,56 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get creditsTitle => '余额 / 积分';
+
+  @override
+  String get creditsFooter => '只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。';
+
+  @override
+  String get creditsEnable => '点宠物显示余额';
+
+  @override
+  String get creditsEnableSubtitle => '轻点宠物时弹出积分卡';
+
+  @override
+  String get creditsBase => '面板地址';
+
+  @override
+  String get creditsToken => '只读令牌';
+
+  @override
+  String get creditsPreview => '预览积分卡';
+
+  @override
+  String get creditsNotSet => '先在宠物设置里填面板地址和只读令牌。';
+
+  @override
+  String get creditsNotSetShort => '未填写';
+
+  @override
+  String creditsFailed(String error) {
+    return '读取失败：$error';
+  }
+
+  @override
+  String creditsTotal(int points) {
+    return '合计 $points 积分';
+  }
+
+  @override
+  String creditsAccounts(int count) {
+    return '$count 个账号';
+  }
+
+  @override
+  String creditsSnapshotAt(String time) {
+    return '登记于 $time';
+  }
+
+  @override
+  String get creditsRefresh => '刷新';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

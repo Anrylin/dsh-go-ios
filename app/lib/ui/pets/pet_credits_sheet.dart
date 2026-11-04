@@ -98,7 +98,7 @@ class _CreditsSheet extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SheetTitleBar(title: l10n.creditsTitle),
+          SheetTitleBar(l10n.creditsTitle),
           body,
         ],
       ),

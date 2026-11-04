@@ -8228,6 +8228,90 @@ abstract class L10n {
   /// **'{month}月{day}日'**
   String commonMonthDay(String month, int day);
 
+  /// No description provided for @creditsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'余额 / 积分'**
+  String get creditsTitle;
+
+  /// No description provided for @creditsFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。'**
+  String get creditsFooter;
+
+  /// No description provided for @creditsEnable.
+  ///
+  /// In zh, this message translates to:
+  /// **'点宠物显示余额'**
+  String get creditsEnable;
+
+  /// No description provided for @creditsEnableSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻点宠物时弹出积分卡'**
+  String get creditsEnableSubtitle;
+
+  /// No description provided for @creditsBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'面板地址'**
+  String get creditsBase;
+
+  /// No description provided for @creditsToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'只读令牌'**
+  String get creditsToken;
+
+  /// No description provided for @creditsPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览积分卡'**
+  String get creditsPreview;
+
+  /// No description provided for @creditsNotSet.
+  ///
+  /// In zh, this message translates to:
+  /// **'先在宠物设置里填面板地址和只读令牌。'**
+  String get creditsNotSet;
+
+  /// No description provided for @creditsNotSetShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'未填写'**
+  String get creditsNotSetShort;
+
+  /// No description provided for @creditsFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取失败：{error}'**
+  String creditsFailed(String error);
+
+  /// No description provided for @creditsTotal.
+  ///
+  /// In zh, this message translates to:
+  /// **'合计 {points} 积分'**
+  String creditsTotal(int points);
+
+  /// No description provided for @creditsAccounts.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个账号'**
+  String creditsAccounts(int count);
+
+  /// No description provided for @creditsSnapshotAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'登记于 {time}'**
+  String creditsSnapshotAt(String time);
+
+  /// No description provided for @creditsRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新'**
+  String get creditsRefresh;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
