@@ -128,6 +128,9 @@ final class VoiceChannel: NSObject, FlutterStreamHandler {
       return result(Self.failure("permission", code: 9))
     }
     let next = make { [weak self] event in self?.send(event, from: id) }
+    // The recognizer takes the audio session; the silent keep-alive loop gives it
+    // up here and takes it back when the utterance ends.
+    BackgroundKeepAlive.suspend()
     do {
       try next.start()
       session = next
@@ -147,6 +150,7 @@ final class VoiceChannel: NSObject, FlutterStreamHandler {
     if event["type"] as? String == "end" {
       session = nil
       sessionId = nil
+      BackgroundKeepAlive.resume()
     }
   }
 
@@ -166,6 +170,7 @@ final class VoiceChannel: NSObject, FlutterStreamHandler {
       session.discard()
       self.send(["type": "error", "code": session.audioFailure], from: id)
       self.send(["type": "end"], from: id)
+      BackgroundKeepAlive.resume()
     }
   }
 

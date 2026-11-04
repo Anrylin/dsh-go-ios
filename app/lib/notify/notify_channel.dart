@@ -319,6 +319,23 @@ class NotifyChannel {
     }
   }
 
+  /// Keeps the app running while it is off screen (a silent audio loop on iOS),
+  /// so a connected host can still wake the isolate and post an alert.
+  ///
+  /// Without it iOS suspends the app seconds after the user switches away, the
+  /// connection dies with it, and notifications only ever arrive while the app
+  /// is on screen. Other platforms keep themselves alive already.
+  Future<void> setBackgroundKeepAlive(bool on) async {
+    if (!Platform.isIOS) return;
+    try {
+      await _methods.invokeMethod<void>('keepAlive', {'on': on});
+    } on MissingPluginException {
+      // No channel on this platform: nothing to keep alive.
+    } on PlatformException {
+      // The session refused; alerts fall back to on-screen only.
+    }
+  }
+
   /// Tells the live activity what to show (see [LivePush]).
   Future<void> live(LivePush push) => _call('live', push.toMap());
 

@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import PDFKit
 import Photos
@@ -537,6 +538,9 @@ private final class NotifyChannel {
       center.removeAllPendingNotificationRequests()
       result(nil)
     case "openSettings", "openLiveSettings": openNotificationSettings(center, result: result)
+    case "keepAlive":
+      BackgroundKeepAlive.set(args["on"] as? Bool ?? false)
+      result(nil)
     case "live", "actionResult": result(nil)
     case "liveStatus": result(["supported": false, "allowed": false])
     default: result(FlutterMethodNotImplemented)
@@ -597,6 +601,97 @@ private final class NotifyChannel {
         }
       }
     }
+  }
+}
+
+/// Keeps the Dart isolate alive in the background by playing a silent loop.
+///
+/// Why: without `UIBackgroundModes` the app is suspended seconds after leaving
+/// the foreground, the host connection dies with it, and no alert can ever be
+/// posted. A playing audio session is one of the few legal ways to stay awake
+/// (see Info.plist `UIBackgroundModes` = `audio`). Battery cost is real, so Dart
+/// turns it on only while a host is connected and notifications are wanted.
+///
+/// `mixWithOthers` keeps other audio (music, calls) untouched: the session adds
+/// a silent stream instead of taking the output away from them.
+enum BackgroundKeepAlive {
+  private static var player: AVAudioPlayer?
+  /// What Dart asked for. Kept apart from the audio session because voice
+  /// input takes the session over for a moment and must give it back after.
+  private static var wanted = false
+
+  static func set(_ on: Bool) {
+    wanted = on
+    on ? start() : stop()
+  }
+
+  /// Voice input needs the microphone: the loop would be cut off anyway, so it
+  /// steps aside instead of fighting the recognizer for the session.
+  static func suspend() {
+    player?.stop()
+    player = nil
+  }
+
+  /// Back from voice input: only if Dart still wants the app awake.
+  static func resume() {
+    guard wanted else { return }
+    start()
+  }
+
+  private static func start() {
+    guard player == nil else { return }
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try session.setActive(true)
+      let p = try AVAudioPlayer(data: silentWav())
+      p.numberOfLoops = -1
+      p.volume = 0
+      guard p.play() else { return }
+      player = p
+    } catch {
+      // No session, no keep-alive: alerts then only arrive while on screen,
+      // exactly as before this patch. Nothing else depends on it.
+      player = nil
+    }
+  }
+
+  private static func stop() {
+    player?.stop()
+    player = nil
+    let session = AVAudioSession.sharedInstance()
+    try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+  }
+
+  /// One second of 16-bit mono silence, built in memory so the bundle carries
+  /// no audio asset.
+  private static func silentWav(seconds: Int = 1, sampleRate: Int = 8000) -> Data {
+    let frames = sampleRate * seconds
+    let dataSize = frames * 2
+    var d = Data()
+    func le32(_ v: Int) {
+      var x = UInt32(v).littleEndian
+      withUnsafeBytes(of: &x) { d.append(contentsOf: $0) }
+    }
+    func le16(_ v: Int) {
+      var x = UInt16(v).littleEndian
+      withUnsafeBytes(of: &x) { d.append(contentsOf: $0) }
+    }
+    d.append(contentsOf: Array("RIFF".utf8))
+    le32(36 + dataSize)
+    d.append(contentsOf: Array("WAVE".utf8))
+    d.append(contentsOf: Array("fmt ".utf8))
+    le32(16)
+    le16(1)
+    le16(1)
+    le32(sampleRate)
+    le32(sampleRate * 2)
+    le16(2)
+    le16(16)
+    d.append(contentsOf: Array("data".utf8))
+    le32(dataSize)
+    d.append(Data(count: dataSize))
+    return d
   }
 }
 

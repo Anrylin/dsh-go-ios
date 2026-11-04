@@ -161,5 +161,9 @@
 	<string>Picks images to send to DSH as attachments.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Saves generated images to your photo library.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

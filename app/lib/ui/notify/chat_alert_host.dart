@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../notify/notify_channel.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/notify_state.dart';
@@ -47,7 +48,17 @@ class _ChatAlertHostState extends ConsumerState<ChatAlertHost> {
   void initState() {
     super.initState();
     _lifecycle = AppLifecycleListener(
-      onStateChange: (state) => ref.read(appForegroundProvider.notifier).set(_onScreen(state)),
+      onStateChange: (state) {
+        final onScreen = _onScreen(state);
+        ref.read(appForegroundProvider.notifier).set(onScreen);
+        // Off screen iOS would suspend the app and with it the host connection,
+        // so no alert could be posted. A silent audio loop keeps it running;
+        // back on screen the loop stops and the battery cost goes with it.
+        final wanted = !onScreen &&
+            ref.read(notifyPrefsProvider).enabled &&
+            ref.read(activeConnectionProvider).value != null;
+        unawaited(NotifyChannel().setBackgroundKeepAlive(wanted));
+      },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(appForegroundProvider.notifier).set(_onScreen(WidgetsBinding.instance.lifecycleState));
