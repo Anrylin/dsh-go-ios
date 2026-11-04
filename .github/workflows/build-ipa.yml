@@ -20,9 +20,12 @@ on:
 permissions:
   contents: write
 
+# Two dispatches in a row used to cancel the waiting one after ~15 minutes in
+# the queue, which read as "the build failed" with no runner and no log. A queued
+# run is worth waiting for, so the newer one waits its turn instead.
 concurrency:
   group: ios-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ipa:
