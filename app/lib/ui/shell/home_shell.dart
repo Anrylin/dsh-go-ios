@@ -81,6 +81,12 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
+/// How far from the left edge a swipe may start and still open the drawer.
+///
+/// Wide enough for a thumb reaching in from the side, narrow enough that a
+/// rightward drag over a table or code block never turns into the drawer.
+const double kDrawerEdgeZone = 32;
+
 class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateMixin {
   late final AnimationController _drawer = AnimationController(
     vsync: this,
@@ -231,13 +237,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     });
   }
 
-  /// How far from the left edge a swipe may start and still open the drawer.
-///
-/// Wide enough for a thumb reaching in from the side, narrow enough that a
-/// rightward drag over a table or code block never turns into the drawer.
-const double kDrawerEdgeZone = 32;
-
-/// The drawer's swipe (right to open, left to push back).
+  /// The drawer's swipe (right to open, left to push back).
   Map<Type, GestureRecognizerFactory> get _drawerGestures => {
     DrawerDragRecognizer: GestureRecognizerFactoryWithHandlers<DrawerDragRecognizer>(
       () => DrawerDragRecognizer(
