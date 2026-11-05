@@ -1,6 +1,7 @@
 // 今日用量：把主机推来的 usage 按会话摊开。数据只来自本机记录，从这一版开始计。
 
 import 'package:flutter/material.dart';
+import 'package:dsh_client/dsh_client.dart' show SessionSummary;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -24,39 +25,44 @@ class TokenUsagePage extends ConsumerWidget {
     };
 
     final rows = usage.bySession.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    return PageFrame(
+    return AppPage.list(
       title: l10n.tokenUsageTitle,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 8, AppSpace.gutter, 24),
-        children: [
-          _TotalCard(usage: usage),
-          const SizedBox(height: 12),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 24),
-              child: Text(
-                l10n.tokenUsageEmpty,
-                style: theme.textTheme.bodyMedium?.copyWith(color: colors.textTertiary),
-              ),
-            )
-          else
-            Card(
-              margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  for (final row in rows)
-                    ListTile(
-                      dense: true,
-                      title: Text(titles[row.key] ?? row.key, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      trailing: Text(formatTokens(row.value), style: AppType.tabular(theme.textTheme.titleSmall!)),
-                    ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 16),
-          Text(l10n.tokenUsageFooter, style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary)),
-        ],
-      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 8, AppSpace.gutter, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TotalCard(usage: usage),
+              const SizedBox(height: 12),
+              if (rows.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: Text(
+                    l10n.tokenUsageEmpty,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: colors.textTertiary),
+                  ),
+                )
+              else
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      for (final row in rows)
+                        ListTile(
+                          dense: true,
+                          title: Text(titles[row.key] ?? row.key, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          trailing: Text(formatTokens(row.value), style: AppType.tabular(theme.textTheme.titleSmall!)),
+                        ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 16),
+              Text(l10n.tokenUsageFooter, style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

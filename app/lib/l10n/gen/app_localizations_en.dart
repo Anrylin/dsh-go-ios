@@ -17225,6 +17225,34 @@ class L10nEn extends L10n {
   String get appSlogan => 'Anytime, anywhere. Just Go!';
 
   @override
+  String get tokenUsageTitle => 'Today\'s tokens';
+
+  @override
+  String get tokenUsageToday => 'Today';
+
+  @override
+  String get tokenUsageInput => 'Input';
+
+  @override
+  String get tokenUsageOutput => 'Output';
+
+  @override
+  String get tokenUsageSessions => 'Chats';
+
+  @override
+  String get tokenUsageEmpty => 'Nothing recorded yet today. Counting starts here; earlier turns are not replayed.';
+
+  @override
+  String get tokenUsageFooter =>
+      'Numbers come from the host\'s usage chunk (once per turn). Only turns after this build are counted.';
+
+  @override
+  String get catalogTokenUsage => 'Today\'s tokens';
+
+  @override
+  String get catalogTokenUsageSummary => 'How many tokens today went in and out, per conversation';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

@@ -34,7 +34,6 @@ class TokenUsageController extends Notifier<TokenUsage> {
   static String _key(DateTime day) =>
       'tokens.${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
 
-  DateTime _day = DateTime.now();
   String? _loadedKey;
 
   @override
@@ -48,7 +47,6 @@ class TokenUsageController extends Notifier<TokenUsage> {
     final key = _key(day);
     final store = await SharedPreferences.getInstance();
     final raw = store.getString(key);
-    _day = day;
     _loadedKey = key;
     if (raw == null) {
       if (state != TokenUsage.empty) state = TokenUsage.empty;

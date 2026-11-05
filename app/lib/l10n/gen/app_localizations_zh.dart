@@ -16329,6 +16329,33 @@ class L10nZh extends L10n {
   String get appSlogan => '随时随刻，想go就Go！';
 
   @override
+  String get tokenUsageTitle => '今日用量';
+
+  @override
+  String get tokenUsageToday => '今天';
+
+  @override
+  String get tokenUsageInput => '输入';
+
+  @override
+  String get tokenUsageOutput => '输出';
+
+  @override
+  String get tokenUsageSessions => '会话数';
+
+  @override
+  String get tokenUsageEmpty => '今天还没有记录。从这里开始计，历史会话不会被回溯。';
+
+  @override
+  String get tokenUsageFooter => '数字来自主机推送的 usage（每轮一次）。只统计装了这版之后的回合；不含估算值。';
+
+  @override
+  String get catalogTokenUsage => '今日用量';
+
+  @override
+  String get catalogTokenUsageSummary => '今天用了多少 token：输入、输出、按会话摊开';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

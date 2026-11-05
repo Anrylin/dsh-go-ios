@@ -29858,6 +29858,60 @@ abstract class L10n {
   /// **'随时随刻，想go就Go！'**
   String get appSlogan;
 
+  /// No description provided for @tokenUsageTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'今日用量'**
+  String get tokenUsageTitle;
+
+  /// No description provided for @tokenUsageToday.
+  ///
+  /// In zh, this message translates to:
+  /// **'今天'**
+  String get tokenUsageToday;
+
+  /// No description provided for @tokenUsageInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入'**
+  String get tokenUsageInput;
+
+  /// No description provided for @tokenUsageOutput.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出'**
+  String get tokenUsageOutput;
+
+  /// No description provided for @tokenUsageSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话数'**
+  String get tokenUsageSessions;
+
+  /// No description provided for @tokenUsageEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'今天还没有记录。从这里开始计，历史会话不会被回溯。'**
+  String get tokenUsageEmpty;
+
+  /// No description provided for @tokenUsageFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'数字来自主机推送的 usage（每轮一次）。只统计装了这版之后的回合；不含估算值。'**
+  String get tokenUsageFooter;
+
+  /// No description provided for @catalogTokenUsage.
+  ///
+  /// In zh, this message translates to:
+  /// **'今日用量'**
+  String get catalogTokenUsage;
+
+  /// No description provided for @catalogTokenUsageSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'今天用了多少 token：输入、输出、按会话摊开'**
+  String get catalogTokenUsageSummary;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:
