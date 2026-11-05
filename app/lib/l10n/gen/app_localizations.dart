@@ -8312,6 +8312,12 @@ abstract class L10n {
   /// **'刷新'**
   String get creditsRefresh;
 
+  /// No description provided for @creditsRefreshing.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新中…'**
+  String get creditsRefreshing;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

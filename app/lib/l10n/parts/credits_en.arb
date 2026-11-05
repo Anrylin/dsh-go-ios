@@ -1,6 +1,6 @@
 {
   "creditsTitle": "Balance / points",
-  "creditsFooter": "Read-only endpoint: the panel's /api/accounts/credits-snapshot. The token stays on this phone.",
+  "creditsFooter": "Read-only endpoint: the panel's /api/accounts/credits-snapshot. These are the numbers the panel has registered; its own scheduled task is what refreshes them upstream, and a read-only token cannot force that, so two refreshes in a row showing the same numbers is normal. The token stays on this phone.",
   "creditsEnable": "Show the balance when the pet is tapped",
   "creditsEnableSubtitle": "A tap on the pet opens the points card",
   "creditsBase": "Panel address",
@@ -40,5 +40,6 @@
       }
     }
   },
-  "creditsRefresh": "Refresh"
+  "creditsRefresh": "Refresh",
+  "creditsRefreshing": "Refreshing…"
 }

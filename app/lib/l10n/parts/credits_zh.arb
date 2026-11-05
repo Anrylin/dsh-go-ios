@@ -1,6 +1,6 @@
 {
   "creditsTitle": "余额 / 积分",
-  "creditsFooter": "只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。",
+  "creditsFooter": "只读接口：面板的 /api/accounts/credits-snapshot。读到的是面板自己登记下来的余额，上游由面板的定时任务刷新；只读令牌不能强制它去问上游，所以连点两次数字相同是正常的。令牌只存在这台手机上。",
   "creditsEnable": "点宠物显示余额",
   "creditsEnableSubtitle": "轻点宠物时弹出积分卡",
   "creditsBase": "面板地址",
@@ -40,5 +40,6 @@
       }
     }
   },
-  "creditsRefresh": "刷新"
+  "creditsRefresh": "刷新",
+  "creditsRefreshing": "刷新中…"
 }

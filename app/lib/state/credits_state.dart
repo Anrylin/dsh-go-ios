@@ -15,35 +15,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @immutable
 class CreditsConfig {
-  const CreditsConfig({
-    this.enabled = false,
-    this.baseUrl = '',
-    this.token = '',
-  });
+  const CreditsConfig({this.enabled = false, this.baseUrl = '', this.token = ''});
 
   final bool enabled;
   final String baseUrl;
   final String token;
 
-  bool get configured =>
-      enabled && baseUrl.trim().isNotEmpty && token.trim().isNotEmpty;
+  bool get configured => enabled && baseUrl.trim().isNotEmpty && token.trim().isNotEmpty;
 
   CreditsConfig copyWith({bool? enabled, String? baseUrl, String? token}) =>
-      CreditsConfig(
-        enabled: enabled ?? this.enabled,
-        baseUrl: baseUrl ?? this.baseUrl,
-        token: token ?? this.token,
-      );
+      CreditsConfig(enabled: enabled ?? this.enabled, baseUrl: baseUrl ?? this.baseUrl, token: token ?? this.token);
 }
 
 /// One account's registered balance.
 @immutable
 class CreditsRow {
-  const CreditsRow({
-    required this.uid,
-    required this.credits,
-    required this.known,
-  });
+  const CreditsRow({required this.uid, required this.credits, required this.known});
 
   final String uid;
   final int credits;
@@ -57,12 +44,7 @@ class CreditsRow {
 
 @immutable
 class CreditsSnapshot {
-  const CreditsSnapshot({
-    required this.total,
-    required this.knownCount,
-    required this.rows,
-    required this.at,
-  });
+  const CreditsSnapshot({required this.total, required this.knownCount, required this.rows, required this.at});
 
   /// Sum over the accounts the panel still knows.
   final int total;
@@ -108,18 +90,35 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
   }
 }
 
-final creditsConfigProvider =
-    NotifierProvider<CreditsConfigController, CreditsConfig>(
-      CreditsConfigController.new,
-    );
+final creditsConfigProvider = NotifierProvider<CreditsConfigController, CreditsConfig>(CreditsConfigController.new);
+
+/// One client for the app's lifetime: a fresh `http.get` per tap pays a new
+/// TCP/TLS handshake every time, which is most of what "刷新很慢" felt like.
+final _client = http.Client();
 
 /// Reads the panel's snapshot. Throws a short message the sheet can show.
-Future<CreditsSnapshot> fetchCredits(CreditsConfig config) async {
+///
+/// [onSent] fires when the request actually goes out, so the card can show how
+/// long the panel took instead of an open-ended spinner.
+Future<CreditsSnapshot> fetchCredits(CreditsConfig config, {void Function()? onSent}) async {
   final base = config.baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
   final uri = Uri.parse('$base/api/accounts/credits-snapshot');
-  final response = await http
-      .get(uri, headers: {'Authorization': 'Bearer ${config.token.trim()}'})
-      .timeout(const Duration(seconds: 10));
+  onSent?.call();
+  // One retry: the panel is behind a home connection, and a dropped keep-alive
+  // socket fails instantly while the second attempt succeeds.
+  late http.Response response;
+  for (var attempt = 0; ; attempt++) {
+    try {
+      response = await _client
+          .get(uri, headers: {'Authorization': 'Bearer ${config.token.trim()}'})
+          .timeout(const Duration(seconds: 8));
+      break;
+    } on Object catch (error) {
+      if (attempt >= 1) {
+        throw CreditsError(error is CreditsError ? error.message : '网络不通（${error.runtimeType}）');
+      }
+    }
+  }
   if (response.statusCode != 200) {
     throw CreditsError('HTTP ${response.statusCode}');
   }
@@ -136,13 +135,9 @@ Future<CreditsSnapshot> fetchCredits(CreditsConfig config) async {
   final at = decoded['snapshot_at'];
   return CreditsSnapshot(
     total: known.fold(0, (sum, r) => sum + r.credits),
-    knownCount: decoded['known_count'] is int
-        ? decoded['known_count']! as int
-        : known.length,
+    knownCount: decoded['known_count'] is int ? decoded['known_count']! as int : known.length,
     rows: known..sort((a, b) => b.credits.compareTo(a.credits)),
-    at: DateTime.fromMillisecondsSinceEpoch(
-      at is int ? at * 1000 : DateTime.now().millisecondsSinceEpoch,
-    ),
+    at: DateTime.fromMillisecondsSinceEpoch(at is int ? at * 1000 : DateTime.now().millisecondsSinceEpoch),
   );
 }
 
@@ -150,11 +145,7 @@ CreditsRow? _row(Map<Object?, Object?> item) {
   final uid = item['uid'];
   final credits = item['credits'];
   if (uid is! String || credits is! num) return null;
-  return CreditsRow(
-    uid: uid,
-    credits: credits.round(),
-    known: item['known'] != false,
-  );
+  return CreditsRow(uid: uid, credits: credits.round(), known: item['known'] != false);
 }
 
 class CreditsError implements Exception {
@@ -163,12 +154,3 @@ class CreditsError implements Exception {
   @override
   String toString() => message;
 }
-
-/// Cached for half a minute: a tap must not fire a request every time.
-final creditsProvider = FutureProvider.autoDispose<CreditsSnapshot?>((
-  ref,
-) async {
-  final config = ref.watch(creditsConfigProvider);
-  if (!config.configured) return null;
-  return fetchCredits(config);
-});
