@@ -7,5 +7,14 @@
   "tokenUsageEmpty": "今天还没有记录。从这里开始计，历史会话不会被回溯。",
   "tokenUsageFooter": "数字来自主机推送的 usage（每轮一次）。只统计装了这版之后的回合；不含估算值。",
   "catalogTokenUsage": "今日用量",
-  "catalogTokenUsageSummary": "今天用了多少 token：输入、输出、按会话摊开"
+  "catalogTokenUsageSummary": "今天用了多少 token：输入、输出、按会话摊开",
+  "tokenUsageNoData": "这一版还没收到任何 usage。发一条消息并等它跑完再看。",
+  "tokenUsageLastAt": "最近一次收到 usage：{time}",
+  "@tokenUsageLastAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

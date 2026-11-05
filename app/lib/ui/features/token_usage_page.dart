@@ -58,7 +58,13 @@ class TokenUsagePage extends ConsumerWidget {
                   ),
                 ),
               const SizedBox(height: 16),
-              Text(l10n.tokenUsageFooter, style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary)),
+              // 没数字先看这行：没有时间说明这一版还没收到过 usage。
+              Text(
+                usage.lastAt == null
+                    ? l10n.tokenUsageNoData
+                    : '${l10n.tokenUsageLastAt(_clock(usage.lastAt!))}\n${l10n.tokenUsageFooter}',
+                style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              ),
             ],
           ),
         ),
@@ -66,6 +72,9 @@ class TokenUsagePage extends ConsumerWidget {
     );
   }
 }
+
+String _clock(DateTime t) =>
+    '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
 
 class _TotalCard extends StatelessWidget {
   const _TotalCard({required this.usage});

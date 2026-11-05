@@ -16356,6 +16356,14 @@ class L10nZh extends L10n {
   String get catalogTokenUsageSummary => '今天用了多少 token：输入、输出、按会话摊开';
 
   @override
+  String get tokenUsageNoData => '这一版还没收到任何 usage。发一条消息并等它跑完再看。';
+
+  @override
+  String tokenUsageLastAt(String time) {
+    return '最近一次收到 usage：$time';
+  }
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

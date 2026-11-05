@@ -15,9 +15,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @immutable
 class TokenUsage {
-  const TokenUsage({required this.input, required this.output, required this.bySession});
+  const TokenUsage({
+    required this.input,
+    required this.output,
+    required this.bySession,
+    this.lastAt,
+  });
 
   static const empty = TokenUsage(input: 0, output: 0, bySession: {});
+
+  /// 最近一次收到 usage 的时间；null = 这一版还没收到过。
+  final DateTime? lastAt;
 
   final int input;
   final int output;
@@ -64,10 +72,12 @@ class TokenUsageController extends Notifier<TokenUsage> {
           }
         }
       }
+      final last = (map['lastAt'] as num?)?.toInt();
       state = TokenUsage(
         input: (map['input'] as num?)?.toInt() ?? 0,
         output: (map['output'] as num?)?.toInt() ?? 0,
         bySession: sessions,
+        lastAt: last == null ? null : DateTime.fromMillisecondsSinceEpoch(last),
       );
     } on Object {
       state = TokenUsage.empty;
@@ -94,7 +104,12 @@ class TokenUsageController extends Notifier<TokenUsage> {
     final store = await SharedPreferences.getInstance();
     await store.setString(
       _key(day),
-      jsonEncode({'input': state.input, 'output': state.output, 'sessions': state.bySession}),
+      jsonEncode({
+        'input': state.input,
+        'output': state.output,
+        'sessions': state.bySession,
+        'lastAt': state.lastAt?.millisecondsSinceEpoch,
+      }),
     );
   }
 }

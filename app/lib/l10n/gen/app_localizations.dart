@@ -29912,6 +29912,18 @@ abstract class L10n {
   /// **'今天用了多少 token：输入、输出、按会话摊开'**
   String get catalogTokenUsageSummary;
 
+  /// No description provided for @tokenUsageNoData.
+  ///
+  /// In zh, this message translates to:
+  /// **'这一版还没收到任何 usage。发一条消息并等它跑完再看。'**
+  String get tokenUsageNoData;
+
+  /// No description provided for @tokenUsageLastAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近一次收到 usage：{time}'**
+  String tokenUsageLastAt(String time);
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

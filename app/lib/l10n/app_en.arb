@@ -4970,6 +4970,8 @@
   "tokenUsageFooter": "Numbers come from the host's usage chunk (once per turn). Only turns after this build are counted.",
   "catalogTokenUsage": "Today's tokens",
   "catalogTokenUsageSummary": "How many tokens today went in and out, per conversation",
+  "tokenUsageNoData": "No usage received yet in this build. Send a message and let the turn finish.",
+  "tokenUsageLastAt": "Last usage received at {time}",
   "updateCheck": "Check for updates",
   "updateAutoCheck": "Check automatically",
   "updateAutoCheckDaily": "Once a day",

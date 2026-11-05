@@ -17253,6 +17253,14 @@ class L10nEn extends L10n {
   String get catalogTokenUsageSummary => 'How many tokens today went in and out, per conversation';
 
   @override
+  String get tokenUsageNoData => 'No usage received yet in this build. Send a message and let the turn finish.';
+
+  @override
+  String tokenUsageLastAt(String time) {
+    return 'Last usage received at $time';
+  }
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override
