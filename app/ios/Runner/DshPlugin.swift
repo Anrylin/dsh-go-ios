@@ -36,6 +36,7 @@ final class DshPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
       MediaChannel(messenger: messenger),
       NotifyChannel(messenger: messenger),
       VoiceChannel(messenger: messenger),
+      UsageChannel(messenger: messenger),
       // The runtime controller subscribes before it learns there is no engine, and
       // activating a stream with no handler reports an error to Flutter.
       SilentEvents(name: "dsh/runtime/events", messenger: messenger),
