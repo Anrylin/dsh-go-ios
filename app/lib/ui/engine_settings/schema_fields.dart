@@ -520,6 +520,80 @@ Map<Object?, String> get commonValueLabels => <Object?, String>{
 };
 
 /// `maxOutputBytes` → `Max output bytes`; `api_key` → `Api key`.
+/// 插件 schema 的字段名是英文 camelCase，`humanizeKey` 只会拆词。中文界面下
+/// 把常见的词换成中文，省得每个第三方插件都自带一套翻译。
+const _wordLabels = <String, String>{
+  'base': '基础',
+  'url': 'URL',
+  'model': '模型',
+  'models': '模型',
+  'sizes': '尺寸',
+  'size': '尺寸',
+  'label': '标签',
+  'channel': '渠道',
+  'channels': '渠道',
+  'active': '当前',
+  'edit': '编辑',
+  'quality': '质量',
+  'options': '选项',
+  'extra': '额外',
+  'body': '参数',
+  'mode': '模式',
+  'format': '格式',
+  'output': '输出',
+  'watermark': '水印',
+  'background': '背景',
+  'save': '保存',
+  'to': '到',
+  'workspace': '工作区',
+  'folder': '文件夹',
+  'show': '显示',
+  'provider': '服务商',
+  'pill': '胶囊',
+  'service': '服务',
+  'native': '原生',
+  'workflow': '工作流',
+  'workflows': '工作流',
+  'json': 'JSON',
+  'name': '名称',
+  'compat': '兼容',
+  'auto': '自动',
+  'selected': '已选',
+};
+
+/// 词组优先：单字逐个换会把 "base URL" 翻成「基础 URL」。
+const _phraseLabels = <String, String>{
+  'base url': '接口地址',
+  'extra body': '额外参数',
+  'active channel': '当前渠道',
+  'active workflow': '当前工作流',
+  'workflow json': '工作流 JSON',
+  'workflow name': '工作流名称',
+  'output format': '输出格式',
+  'quality options': '质量选项',
+  'size mode': '尺寸模式',
+  'show provider pill': '显示服务商胶囊',
+  'save to workspace': '保存到工作区',
+  'workspace folder': '工作区文件夹',
+};
+
+String _zhWords(List<String> words) {
+  var text = words.join(' ').toLowerCase();
+  for (final entry in _phraseLabels.entries) {
+    text = text.replaceAll(entry.key, entry.value);
+  }
+  final out = <String>[];
+  for (final word in text.split(' ')) {
+    if (word.isEmpty) continue;
+    final hit = _wordLabels[word];
+    out.add(hit ?? word);
+  }
+  // 品牌名(seedream / openai / xai …)保持原样，只首字母大写便于阅读。
+  return out
+      .map((w) => RegExp(r'^[a-z]').hasMatch(w) ? w[0].toUpperCase() + w.substring(1) : w)
+      .join(' ');
+}
+
 String humanizeKey(String key) {
   final spaced = key
       .replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}')
@@ -528,6 +602,7 @@ String humanizeKey(String key) {
       .trim();
   if (spaced.isEmpty) return key;
   final words = spaced.split(RegExp(r'\s+'));
+  if (AppLocale.current.languageCode == 'zh') return _zhWords(words);
   return [
     for (final (i, w) in words.indexed)
       if (w.length > 1 && w == w.toUpperCase())
