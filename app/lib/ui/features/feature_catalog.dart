@@ -9,7 +9,6 @@ import 'package:dsh_client/dsh_client.dart' show PluginBundle;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'token_usage_page.dart';
 import '../../l10n/l10n.dart';
 import '../../plugins/native/native_icons.dart';
 import '../../plugins/native/native_state.dart';
@@ -283,13 +282,6 @@ final featureSections = <FeatureSection>[
     ),
   ]),
   FeatureSection.localized((l10n) => l10n.catalogPlugins, [
-    FeatureItem.localized(
-      id: 'token-usage',
-      title: (l10n) => l10n.catalogTokenUsage,
-      summary: (l10n) => l10n.catalogTokenUsageSummary,
-      icon: AppIcons.chart,
-      native: (_) => const TokenUsagePage(),
-    ),
     FeatureItem.localized(
       id: 'plugins',
       title: (l10n) => l10n.catalogPlugins,
