@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
+import '../../state/live_activity_state.dart';
 import '../../state/notify_state.dart';
 import '../bots/bot_alerts.dart';
 import '../common/discard_guard.dart';
@@ -105,6 +106,10 @@ class _ChatAlertHostState extends ConsumerState<ChatAlertHost> {
 
   @override
   Widget build(BuildContext context) {
+    // 桌面悬浮窗那条桥只在 Android 有,可它顺手负责把 live 推给系统
+    // (`dsh/notify` 的 live)。iOS 没有悬浮窗 → 没人 watch → 灵动岛永远收不到。
+    // 这里 watch 一次,让它在每个平台都活着。
+    ref.watch(liveActivityBridgeProvider);
     // Without the native module (widget tests, desktop) nothing starts: no
     // host subscriptions, no tap stream, no banner.
     final native = ref.watch(notifySystemStatusProvider.select((s) => s.value?.native ?? false));
