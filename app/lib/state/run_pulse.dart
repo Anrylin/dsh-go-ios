@@ -11,6 +11,8 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'token_usage.dart';
+
 import 'notify_state.dart' show appForegroundProvider;
 
 /// 流式文本的 token 估算:中文(含日韩)字 × 0.6,其余非空白字符 × 0.3。
@@ -154,12 +156,16 @@ class SpeedGauge {
 class RunPulse extends ChangeNotifier {
   RunPulse({
     DateTime Function()? clock,
+    this.onUsage,
     this.tick = const Duration(milliseconds: 250),
     TokenRateMeter? meter,
     SpeedGauge? gauge,
   }) : _clock = clock ?? DateTime.now,
        meter = meter ?? TokenRateMeter(),
        gauge = gauge ?? SpeedGauge();
+
+  /// 一个回合结束时把 usage 交出去(今日用量)。为 null 时什么都不做。
+  final void Function(int input, int output)? onUsage;
 
   final DateTime Function() _clock;
   final Duration tick;
@@ -225,6 +231,7 @@ class RunPulse extends ChangeNotifier {
     };
     if (chunk is UsageChunk) {
       _calibrate(_attemptEstimate[attempt], chunk.usage.outputTokens);
+      onUsage?.call(chunk.usage.inputTokens, chunk.usage.outputTokens);
       return;
     }
     if (text == null || text.isEmpty) return;
@@ -325,7 +332,11 @@ DateTime? compactingAfter(Iterable<SessionLogEvent> events, DateTime? current, b
 
 /// 每个会话一个 [RunPulse];[ChatController] 喂数据,活动条读。
 final runPulseProvider = Provider.autoDispose.family<RunPulse, String>((ref, sessionId) {
-  final pulse = RunPulse();
+  final pulse = RunPulse(
+    // 记「今日用量」:会话身份在这里天然就有。
+    onUsage: (input, output) =>
+        unawaited(ref.read(tokenUsageProvider.notifier).record(sessionId, input, output)),
+  );
   ref.listen(appForegroundProvider, (_, foreground) {
     pulse.setSamplingEnabled(foreground);
   }, fireImmediately: true);

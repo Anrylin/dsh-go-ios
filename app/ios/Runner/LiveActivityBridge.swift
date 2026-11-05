@@ -76,9 +76,13 @@ enum LiveActivityBridge {
     // 已有活动:原地更新，不重新请求（重启会闪一下，而且系统限量）。
     for activity in Activity<DshActivityAttributes>.activities {
       if activity.attributes.sessionId == sessionId {
-        await activity.update(
-          ActivityContent(state: state, staleDate: Date().addingTimeInterval(30 * 60))
+        // 空闲状态不该半小时就灰掉：那是"待命"，不是"过期"。
+      await activity.update(
+        ActivityContent(
+          state: state,
+          staleDate: state.kind == "idle" ? Date().addingTimeInterval(8 * 60 * 60) : Date().addingTimeInterval(30 * 60)
         )
+      )
         return
       }
       // 换了会话:旧的收掉，一个岛只讲一件事。留 4 秒再消失，
@@ -90,7 +94,12 @@ enum LiveActivityBridge {
     do {
       _ = try Activity.request(
         attributes: attributes,
-        content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(30 * 60)),
+        content: ActivityContent(
+        state: state,
+        staleDate: state.kind == "idle"
+          ? Date().addingTimeInterval(8 * 60 * 60)
+          : Date().addingTimeInterval(30 * 60)
+      ),
         pushType: nil
       )
     } catch {

@@ -22,7 +22,7 @@ import '../pets/pet_mood.dart';
 import '../pets/pet_state.dart';
 import 'chat_alerts.dart' show alertTitle;
 
-enum LiveKind { running, waiting, done, failed }
+enum LiveKind { idle, running, waiting, done, failed }
 
 /// What the live activity says. Equal values are not pushed again.
 @immutable

@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../notify/live_activity.dart';
 import '../pets/pet_signals.dart';
 import '../pets/pet_state.dart';
@@ -22,7 +23,7 @@ final liveActivityProvider = Provider<LiveActivity?>((ref) {
   final titles = ref.watch(_liveTitlesProvider);
   learnLiveTitles(titles, signals.runs);
   final prefs = ref.watch(notifyPrefsProvider);
-  return liveActivityOf(
+  final activity = liveActivityOf(
     pet: ref.watch(petStateProvider),
     runs: signals.runs,
     pending: signals.pending,
@@ -30,7 +31,23 @@ final liveActivityProvider = Provider<LiveActivity?>((ref) {
     showDone: prefs.done,
     showFailed: prefs.failed,
   );
+  // 没有活儿的时候也留一张「待命」的卡：在岛上就一直有位置，不必等下一次
+  // 状态变化才出现（前台尤其明显——那时新状态往往要等到下一轮才推）。
+  return activity ?? idleActivityOf(ref.watch(petStateProvider));
 });
+
+/// 空闲时的活动：标题留给当前会话（拿不到就用 DSH），没有计时。
+LiveActivity idleActivityOf(PetState pet) {
+  final l10n = appL10n;
+  return LiveActivity(
+    kind: LiveKind.idle,
+    title: 'DSH',
+    text: l10n.liveIdleText,
+    chip: l10n.liveChipIdle,
+    publicText: l10n.liveIdleText,
+    mood: pet.state,
+  );
+}
 
 /// What `dsh/notify` is told: off with notifications or the switch, else the
 /// activity and the pet whose pictures it uses.

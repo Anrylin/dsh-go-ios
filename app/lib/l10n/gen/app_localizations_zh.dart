@@ -7755,6 +7755,12 @@ class L10nZh extends L10n {
   String get liveSettingsFooterIos => 'iOS：锁屏卡片在 16.2+ 显示，灵动岛要 iPhone 14 Pro 及以上；App 被划掉后不再更新。';
 
   @override
+  String get liveIdleText => '待命中';
+
+  @override
+  String get liveChipIdle => '待命';
+
+  @override
   String get localeTitle => '语言';
 
   @override

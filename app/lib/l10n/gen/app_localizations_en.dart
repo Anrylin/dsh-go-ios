@@ -8199,6 +8199,12 @@ class L10nEn extends L10n {
       'iOS: the lock screen card needs 16.2+; the Dynamic Island needs iPhone 14 Pro or newer. Nothing updates once the app is swiped away.';
 
   @override
+  String get liveIdleText => 'Standing by';
+
+  @override
+  String get liveChipIdle => 'Idle';
+
+  @override
   String get localeTitle => 'Language';
 
   @override

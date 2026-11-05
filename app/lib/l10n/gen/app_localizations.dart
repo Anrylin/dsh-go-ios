@@ -14234,6 +14234,18 @@ abstract class L10n {
   /// **'iOS：锁屏卡片在 16.2+ 显示，灵动岛要 iPhone 14 Pro 及以上；App 被划掉后不再更新。'**
   String get liveSettingsFooterIos;
 
+  /// No description provided for @liveIdleText.
+  ///
+  /// In zh, this message translates to:
+  /// **'待命中'**
+  String get liveIdleText;
+
+  /// No description provided for @liveChipIdle.
+  ///
+  /// In zh, this message translates to:
+  /// **'待命'**
+  String get liveChipIdle;
+
   /// No description provided for @localeTitle.
   ///
   /// In zh, this message translates to:

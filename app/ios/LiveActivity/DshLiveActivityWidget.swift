@@ -57,6 +57,7 @@ struct DshLiveActivityWidget: Widget {
     case "waiting": return "hand.raised.fill"
     case "done": return "checkmark.circle.fill"
     case "failed": return "exclamationmark.triangle.fill"
+    case "idle": return "moon.zzz.fill"
     default: return "ellipsis.circle.fill"
     }
   }
@@ -66,6 +67,7 @@ struct DshLiveActivityWidget: Widget {
     case "waiting": return .yellow
     case "done": return .green
     case "failed": return .red
+    case "idle": return .white.opacity(0.55)
     default: return .white
     }
   }
@@ -100,6 +102,7 @@ private struct CompactTrailing: View {
   private var shortChip: String {
     switch state.kind {
     case "waiting": return "待确认"
+    case "idle": return "待命"
     case "done": return "完成"
     case "failed": return "出错"
     default: return state.chip
@@ -132,6 +135,7 @@ private struct LockScreenCard: View {
     case "waiting": return "hand.raised.fill"
     case "done": return "checkmark.circle.fill"
     case "failed": return "exclamationmark.triangle.fill"
+    case "idle": return "moon.zzz.fill"
     default: return "ellipsis.circle.fill"
     }
   }
@@ -141,6 +145,7 @@ private struct LockScreenCard: View {
     case "waiting": return .yellow
     case "done": return .green
     case "failed": return .red
+    case "idle": return .white.opacity(0.55)
     default: return .white
     }
   }

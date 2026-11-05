@@ -23,5 +23,7 @@
   "liveUnsupported": "This phone's system doesn't support live activities yet",
   "liveBlockedTitle": "Live activities are off for DSH Go",
   "liveBlockedText": "Turn on live activities for DSH Go in system settings (some phones call it “Show on Live Alerts”)",
-  "liveSettingsFooterIos": "iOS: the lock screen card needs 16.2+; the Dynamic Island needs iPhone 14 Pro or newer. Nothing updates once the app is swiped away."
+  "liveSettingsFooterIos": "iOS: the lock screen card needs 16.2+; the Dynamic Island needs iPhone 14 Pro or newer. Nothing updates once the app is swiped away.",
+  "liveIdleText": "Standing by",
+  "liveChipIdle": "Idle"
 }
