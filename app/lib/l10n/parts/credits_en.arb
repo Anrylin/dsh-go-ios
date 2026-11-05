@@ -43,5 +43,7 @@
   "creditsRefresh": "Refresh",
   "creditsRefreshing": "Refreshing…",
   "creditsOpenSettings": "Open settings",
-  "creditsTest": "Test connection"
+  "creditsTest": "Test connection",
+  "creditsAdminToken": "Admin token (optional)",
+  "creditsAdminTokenHint": "With it the panel asks upstream right away; without it the card shows the registered numbers"
 }

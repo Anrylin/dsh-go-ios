@@ -8336,6 +8336,18 @@ abstract class L10n {
   /// **'测试连接'**
   String get creditsTest;
 
+  /// No description provided for @creditsAdminToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理员令牌（可选）'**
+  String get creditsAdminToken;
+
+  /// No description provided for @creditsAdminTokenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'有它才能让面板立刻去问上游，否则只读登记过的数字'**
+  String get creditsAdminTokenHint;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

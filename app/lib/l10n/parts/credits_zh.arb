@@ -43,5 +43,7 @@
   "creditsRefresh": "刷新",
   "creditsRefreshing": "刷新中…",
   "creditsOpenSettings": "去设置",
-  "creditsTest": "测试连接"
+  "creditsTest": "测试连接",
+  "creditsAdminToken": "管理员令牌（可选）",
+  "creditsAdminTokenHint": "有它才能让面板立刻去问上游，否则只读登记过的数字"
 }

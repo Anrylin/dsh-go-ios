@@ -60,6 +60,21 @@ class CreditsSettingsSection extends ConsumerWidget {
             onDone: (v) => notifier.setSource(token: v),
           ),
         ),
+        SettingsTile(
+          icon: Icons.admin_panel_settings,
+          title: l10n.creditsAdminToken,
+          subtitle: l10n.creditsAdminTokenHint,
+          value: Text(
+            config.adminToken.isEmpty ? l10n.creditsNotSetShort : _mask(config.adminToken),
+          ),
+          onTap: () => _edit(
+            context,
+            title: l10n.creditsAdminToken,
+            hint: 'wbt_...（admin）',
+            initial: config.adminToken,
+            onDone: (v) => notifier.setSource(adminToken: v),
+          ),
+        ),
         if (config.configured) ...[
           SettingsTile(
             icon: Icons.insights,

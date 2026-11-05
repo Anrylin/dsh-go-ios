@@ -47,7 +47,11 @@ class _CreditsSheetState extends ConsumerState<_CreditsSheet> {
       _error = null;
     });
     try {
-      final snapshot = await fetchCredits(config);
+      // 有管理员令牌就顺手让面板去问上游,否则只能读它登记过的数字。
+      final snapshot = await fetchCredits(
+        config,
+        force: config.adminToken.isNotEmpty,
+      );
       if (!mounted) return;
       setState(() {
         _last = snapshot;

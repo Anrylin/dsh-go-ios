@@ -19,16 +19,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @immutable
 class CreditsConfig {
-  const CreditsConfig({this.enabled = false, this.baseUrl = '', this.token = ''});
+  const CreditsConfig({
+    this.enabled = false,
+    this.baseUrl = '',
+    this.token = '',
+    this.adminToken = '',
+  });
 
   final bool enabled;
   final String baseUrl;
   final String token;
 
+  /// 可选：管理员令牌。只有它能让面板**立刻去问上游**；只读令牌会被 403 拦。
+  final String adminToken;
+
   bool get configured => enabled && baseUrl.trim().isNotEmpty && token.trim().isNotEmpty;
 
-  CreditsConfig copyWith({bool? enabled, String? baseUrl, String? token}) =>
-      CreditsConfig(enabled: enabled ?? this.enabled, baseUrl: baseUrl ?? this.baseUrl, token: token ?? this.token);
+  CreditsConfig copyWith({
+    bool? enabled,
+    String? baseUrl,
+    String? token,
+    String? adminToken,
+  }) => CreditsConfig(
+    enabled: enabled ?? this.enabled,
+    baseUrl: baseUrl ?? this.baseUrl,
+    token: token ?? this.token,
+    adminToken: adminToken ?? this.adminToken,
+  );
 }
 
 /// One account's registered balance.
@@ -64,6 +81,7 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
   // Keychain: survives a reinstall, which the app container does not.
   static const _kBase = 'credits.baseUrl';
   static const _kToken = 'credits.token';
+  static const _kAdmin = 'credits.adminToken';
   static const _vault = FlutterSecureStorage();
 
   @override
@@ -76,24 +94,41 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
     final store = await SharedPreferences.getInstance();
     String base = '';
     String token = '';
+    String admin = '';
     try {
       base = await _vault.read(key: _kBase) ?? '';
       token = await _vault.read(key: _kToken) ?? '';
+      admin = await _vault.read(key: _kAdmin) ?? '';
     } on Object {
       // No Keychain (tests, other platforms): fall back to the old place so an
       // install that already had them keeps working.
       base = store.getString(_kBase) ?? '';
       token = store.getString(_kToken) ?? '';
+      admin = store.getString(_kAdmin) ?? '';
     }
     final enabled = store.getBool(_kEnabled) ?? (base.isNotEmpty && token.isNotEmpty);
-    final next = CreditsConfig(enabled: enabled, baseUrl: base, token: token);
+    final next = CreditsConfig(
+      enabled: enabled,
+      baseUrl: base,
+      token: token,
+      adminToken: admin,
+    );
     if (next != state) state = next;
   }
 
   Future<void> setEnabled(bool on) => _save(state.copyWith(enabled: on));
 
-  Future<void> setSource({String? baseUrl, String? token}) =>
-      _save(state.copyWith(baseUrl: baseUrl?.trim(), token: token?.trim()));
+  Future<void> setSource({
+    String? baseUrl,
+    String? token,
+    String? adminToken,
+  }) => _save(
+    state.copyWith(
+      baseUrl: baseUrl?.trim(),
+      token: token?.trim(),
+      adminToken: adminToken?.trim(),
+    ),
+  );
 
   Future<void> _save(CreditsConfig next) async {
     state = next;
@@ -102,9 +137,11 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
     try {
       await _vault.write(key: _kBase, value: next.baseUrl);
       await _vault.write(key: _kToken, value: next.token);
+      await _vault.write(key: _kAdmin, value: next.adminToken);
     } on Object {
       await store.setString(_kBase, next.baseUrl);
       await store.setString(_kToken, next.token);
+      await store.setString(_kAdmin, next.adminToken);
     }
   }
 }
@@ -119,9 +156,27 @@ final _client = http.Client();
 ///
 /// [onSent] fires when the request actually goes out, so the card can show how
 /// long the panel took instead of an open-ended spinner.
-Future<CreditsSnapshot> fetchCredits(CreditsConfig config, {void Function()? onSent}) async {
+Future<CreditsSnapshot> fetchCredits(
+  CreditsConfig config, {
+  void Function()? onSent,
+  bool force = false,
+}) async {
   final uri = Uri.parse(endpointFor(config.baseUrl));
   onSent?.call();
+  // 只读令牌让面板用它登记过的数字；要让数字真的变，得先让它去问上游,
+  // 而那一步需要管理员令牌（`POST /api/accounts/refresh-credits`）。
+  if (force && config.adminToken.isNotEmpty) {
+    try {
+      await _client
+          .post(
+            Uri.parse('${baseOf(config.baseUrl)}/api/accounts/refresh-credits?force=true'),
+            headers: {'Authorization': 'Bearer ${config.adminToken.trim()}'},
+          )
+          .timeout(const Duration(seconds: 20));
+    } on Object {
+      // 刷新失败不挡读数：读到的还是上一次登记的数字。
+    }
+  }
   // One retry: the panel is behind a home connection, and a dropped keep-alive
   // socket fails instantly while the second attempt succeeds.
   late http.Response response;
@@ -179,6 +234,16 @@ class CreditsError implements Exception {
   String toString() => message;
 }
 
+
+/// 用户填的地址去掉 `/api…` 尾巴，留下 origin（+path）。
+String baseOf(String raw) {
+  var base = raw.trim();
+  const path = '/api/accounts/credits-snapshot';
+  if (base.endsWith(path)) base = base.substring(0, base.length - path.length);
+  base = base.replaceAll(RegExp(r'/+$'), '');
+  if (base.endsWith('/api')) base = base.substring(0, base.length - 4);
+  return base.replaceAll(RegExp(r'/+$'), '');
+}
 
 /// 把用户填的东西整理成真正的接口地址。
 ///

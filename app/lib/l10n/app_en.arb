@@ -1374,6 +1374,8 @@
   "creditsRefreshing": "Refreshing…",
   "creditsOpenSettings": "Open settings",
   "creditsTest": "Test connection",
+  "creditsAdminToken": "Admin token (optional)",
+  "creditsAdminTokenHint": "With it the panel asks upstream right away; without it the card shows the registered numbers",
   "engineNewChatDefaultsLast": "New chat defaults (last choice)",
   "engineNewChatDefaultsFixed": "New chat defaults (fixed)",
   "engineNewChatUseLast": "Last choice",

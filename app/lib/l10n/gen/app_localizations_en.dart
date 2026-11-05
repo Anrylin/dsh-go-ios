@@ -4821,6 +4821,13 @@ class L10nEn extends L10n {
   String get creditsTest => 'Test connection';
 
   @override
+  String get creditsAdminToken => 'Admin token (optional)';
+
+  @override
+  String get creditsAdminTokenHint =>
+      'With it the panel asks upstream right away; without it the card shows the registered numbers';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

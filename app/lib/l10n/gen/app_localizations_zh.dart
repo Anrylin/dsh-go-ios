@@ -4531,6 +4531,12 @@ class L10nZh extends L10n {
   String get creditsTest => '测试连接';
 
   @override
+  String get creditsAdminToken => '管理员令牌（可选）';
+
+  @override
+  String get creditsAdminTokenHint => '有它才能让面板立刻去问上游，否则只读登记过的数字';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override
