@@ -16,9 +16,17 @@ enum LiveActivityBridge {
 
   static func status() -> [String: Any] {
     if #available(iOS 16.2, *) {
-      return ["supported": true, "allowed": ActivityAuthorizationInfo().areActivitiesEnabled]
+      let info = ActivityAuthorizationInfo()
+      return [
+        "supported": true,
+        "allowed": info.areActivitiesEnabled,
+        "frequent": info.frequentPushesEnabled,
+        // 有几个活动正挂着:0 说明 app 根本没请求成功。
+        "active": Activity<DshActivityAttributes>.activities.count,
+        "system": ProcessInfo.processInfo.operatingSystemVersionString,
+      ]
     }
-    return ["supported": false, "allowed": false]
+    return ["supported": false, "allowed": false, "active": 0]
   }
 
   static func apply(_ args: [String: Any], result: @escaping FlutterResult) {
@@ -78,11 +86,17 @@ enum LiveActivityBridge {
     }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
     // waiting 状态的岛要留住，直到人处理；其余在半小时后自己变灰。
-    _ = try? Activity.request(
-      attributes: attributes,
-      content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(30 * 60)),
-      pushType: nil
-    )
+    do {
+      _ = try Activity.request(
+        attributes: attributes,
+        content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(30 * 60)),
+        pushType: nil
+      )
+    } catch {
+      // Surfaced to Dart: a silent failure here is indistinguishable from "the
+      // island is broken".
+      NSLog("DshLiveActivity request failed: \(error)")
+    }
   }
 
   @available(iOS 16.2, *)

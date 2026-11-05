@@ -202,6 +202,7 @@ class LiveSystemStatus {
     this.allowed = false,
     this.settings = false,
     this.xiaomiFocus = false,
+    this.active = 0,
   });
 
   const LiveSystemStatus.unavailable() : this(native: false);
@@ -211,6 +212,7 @@ class LiveSystemStatus {
     allowed: m['allowed'] == true,
     settings: m['settings'] == true,
     xiaomiFocus: m['xiaomiFocus'] == true,
+    active: (m['active'] as num?)?.toInt() ?? 0,
   );
 
   final bool native;
@@ -226,6 +228,10 @@ class LiveSystemStatus {
 
   /// HyperOS shows DSH Go's focus notifications.
   final bool xiaomiFocus;
+
+  /// iOS: how many live activities are on screen right now. 0 while a turn runs
+  /// means the request never reached ActivityKit.
+  final int active;
 
   @override
   bool operator ==(Object other) =>

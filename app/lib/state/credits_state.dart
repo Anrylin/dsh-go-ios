@@ -139,7 +139,13 @@ Future<CreditsSnapshot> fetchCredits(CreditsConfig config, {void Function()? onS
     }
   }
   if (response.statusCode != 200) {
-    throw CreditsError('HTTP ${response.statusCode}');
+    // A 404 is almost always the wrong address: the panel lives on its own port,
+    // and port 80 answers a different app with a 404 for /api/...
+    throw CreditsError(
+      response.statusCode == 404
+          ? 'HTTP 404（地址不对？要带端口，例如 http://IP:7864）'
+          : 'HTTP ${response.statusCode}',
+    );
   }
   final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
   if (decoded is! Map<String, Object?>) throw const CreditsError('格式不对');

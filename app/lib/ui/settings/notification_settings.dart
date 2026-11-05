@@ -133,6 +133,13 @@ class _NotificationSettingsPageState extends ConsumerState<NotificationSettingsP
     );
   }
 
+  /// iOS 上多报一行状态，用来区分「没发请求」「系统不允许」「活动数为 0」。
+  static String _liveDiag(LiveSystemStatus? live) {
+    if (!Platform.isIOS || live == null) return '';
+    return '\n\n诊断：supported=${live.supported} · allowed=${live.allowed} · '
+        'active=${live.active}';
+  }
+
   /// The live activity is on here but the system holds it back: the way to its switch.
   Widget _liveNote() => PhoneNote(
     tone: NoteTone.warn,
@@ -225,7 +232,11 @@ class _NotificationSettingsPageState extends ConsumerState<NotificationSettingsP
           footer: ohos
               ? null
               // iOS 只需要说清锁屏卡片和灵动岛的门槛，厂商清单是 Android 的事。
-              : Text(Platform.isIOS ? l10n.liveSettingsFooterIos : l10n.liveSettingsFooter),
+              : Text(
+                  Platform.isIOS
+                      ? '${l10n.liveSettingsFooterIos}${_liveDiag(live)}'
+                      : l10n.liveSettingsFooter,
+                ),
           children: [
             SettingsSwitchTile(
               spot: Spots.notifyLive,
