@@ -541,8 +541,9 @@ private final class NotifyChannel {
     case "keepAlive":
       BackgroundKeepAlive.set(args["on"] as? Bool ?? false)
       result(nil)
-    case "live", "actionResult": result(nil)
-    case "liveStatus": result(["supported": false, "allowed": false])
+    case "live": LiveActivityBridge.apply(args, result: result)
+    case "actionResult": result(nil)
+    case "liveStatus": result(LiveActivityBridge.status())
     default: result(FlutterMethodNotImplemented)
     }
   }

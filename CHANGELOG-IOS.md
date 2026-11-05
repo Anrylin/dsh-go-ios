@@ -38,7 +38,27 @@
   直接改合并后的 `app_zh.arb` 会被 `tool/l10n_merge.py` 冲掉。
 - `app/ios/Runner/Info.plist`：ATS 例外 `117.72.34.46`，允许用明文 HTTP 打自建面板。
 
-### 3. Codemagic 构建（`65ce48c`）
+### 3. 灵动岛 / 实时活动（`LIVE` 提交，CI 编译验证）
+
+`dsh/notify` 的 `live` 与 `liveStatus` 在 iOS 上原本是空实现。现在接到 ActivityKit：
+
+- 新 target **`DshLiveActivity`**（Widget Extension，iOS 16.1+）：
+  锁屏卡片 + 灵动岛 compact / expanded / minimal 三态。
+- `app/ios/LiveActivity/DshActivityAttributes.swift`：`ContentState` 与
+  Dart 的 `LiveActivity.toMap` 字段一一对应（`kind` / `title` / `text` / `chip` /
+  `publicText` / `mood` / `sinceMs` / `sessionId`），Dart 无改动。
+- `app/ios/Runner/LiveActivityBridge.swift`：`request / update / end`，
+  只保留一个活动（换会话时收掉旧的），`staleDate` 30 分钟。
+- `app/ios/Runner/Info.plist`：`NSSupportsLiveActivities = true`。
+- 工程用 Ruby `xcodeproj` 生成：依赖关系、嵌入 `PlugIns/`、
+  `APPLICATION_EXTENSION_API_ONLY = YES`、bundle id `…dshgo.LiveActivity`。
+
+状态映射沿用 Dart 侧：`running` 计时、`waiting` 黄色待确认、`done` 绿色完成、
+`failed` 红色出错。点岛走 `dshgo://open/chat`。
+
+限制：**本地更新**（靠已做的后台保活）。App 被划掉后岛会消失；远程推送要 APNs。
+
+### 4. Codemagic 构建（`65ce48c`）
 
 `codemagic.yaml`：`mac_mini_m2` + Flutter 3.47.7，`l10n_merge --no-gen` →
 `pub get` → `gen-l10n` → `flutter build ios --release --no-codesign` → 打 Payload。
