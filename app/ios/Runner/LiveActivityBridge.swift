@@ -44,6 +44,7 @@ enum LiveActivityBridge {
     }
   }
 
+  @available(iOS 16.1, *)
   private static func contentState(_ map: [String: Any]) -> DshActivityAttributes.ContentState {
     let sinceMs = map["sinceMs"] as? Double
     return DshActivityAttributes.ContentState(
@@ -58,6 +59,7 @@ enum LiveActivityBridge {
     )
   }
 
+  @available(iOS 16.1, *)
   private static func show(
     state: DshActivityAttributes.ContentState,
     sessionId: String
@@ -83,6 +85,7 @@ enum LiveActivityBridge {
     )
   }
 
+  @available(iOS 16.1, *)
   private static func endAll() async {
     for activity in Activity<DshActivityAttributes>.activities {
       await activity.end(nil, dismissalPolicy: .immediate)

@@ -7,13 +7,10 @@ import WidgetKit
 @main
 struct DshLiveActivityBundle: WidgetBundle {
   var body: some Widget {
-    if #available(iOS 16.1, *) {
-      DshLiveActivityWidget()
-    }
+    DshLiveActivityWidget()
   }
 }
 
-@available(iOS 16.1, *)
 struct DshLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: DshActivityAttributes.self) { context in
@@ -71,7 +68,6 @@ struct DshLiveActivityWidget: Widget {
   }
 }
 
-@available(iOS 16.1, *)
 private struct Counter: View {
   let state: DshActivityAttributes.ContentState
 
@@ -86,7 +82,6 @@ private struct Counter: View {
   }
 }
 
-@available(iOS 16.1, *)
 private struct CompactTrailing: View {
   let state: DshActivityAttributes.ContentState
 
@@ -109,7 +104,6 @@ private struct CompactTrailing: View {
   }
 }
 
-@available(iOS 16.1, *)
 private struct LockScreenCard: View {
   let state: DshActivityAttributes.ContentState
 

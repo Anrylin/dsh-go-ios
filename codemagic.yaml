@@ -19,8 +19,14 @@ workflows:
           flutter gen-l10n
       - name: Build (unsigned)
         script: |
+          set +e
           cd app
-          flutter build ios --release --no-codesign
+          # Keep the compiler's own words: Codemagic's UI is the only place the
+          # log lives, and this artifact survives a failed build.
+          flutter build ios --release --no-codesign 2>&1 | tee "$CM_BUILD_DIR/build.log"
+          status=${PIPESTATUS[0]}
+          tail -n 150 "$CM_BUILD_DIR/build.log"
+          exit $status
       - name: Package the IPA
         script: |
           set -e
@@ -35,5 +41,6 @@ workflows:
             > "$CM_BUILD_DIR/dsh-go-ios-unsigned.ipa.sha256"
           ls -lh "$CM_BUILD_DIR/dsh-go-ios-unsigned.ipa"
     artifacts:
+      - build.log
       - dsh-go-ios-unsigned.ipa
       - dsh-go-ios-unsigned.ipa.sha256
