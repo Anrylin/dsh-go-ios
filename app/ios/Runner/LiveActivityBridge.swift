@@ -81,8 +81,9 @@ enum LiveActivityBridge {
         )
         return
       }
-      // 换了会话:旧的收掉，一个岛只讲一件事。
-      await activity.end(nil, dismissalPolicy: .immediate)
+      // 换了会话:旧的收掉，一个岛只讲一件事。留 4 秒再消失，
+      // 否则收得太快，手还没点上去它就已经没了。
+      await activity.end(nil, dismissalPolicy: .after(Date().addingTimeInterval(4)))
     }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
     // waiting 状态的岛要留住，直到人处理；其余在半小时后自己变灰。
@@ -102,7 +103,7 @@ enum LiveActivityBridge {
   @available(iOS 16.2, *)
   private static func endAll() async {
     for activity in Activity<DshActivityAttributes>.activities {
-      await activity.end(nil, dismissalPolicy: .immediate)
+      await activity.end(nil, dismissalPolicy: .after(Date().addingTimeInterval(4)))
     }
   }
 }

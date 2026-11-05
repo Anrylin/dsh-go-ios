@@ -15,14 +15,14 @@ struct DshLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: DshActivityAttributes.self) { context in
       LockScreenCard(state: context.state)
-        .activityBackgroundTint(Color.black.opacity(0.55))
+        .activityBackgroundTint(Color.black)
         .activitySystemActionForegroundColor(.white)
     } dynamicIsland: { context in
       let state = context.state
       return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
           Label {
-            Text(state.chip).font(.caption)
+            Text(state.chip.isEmpty ? "运行中" : state.chip).font(.caption).foregroundStyle(.white)
           } icon: {
             Image(systemName: glyph(state.kind)).foregroundStyle(tint(state.kind))
           }
@@ -32,13 +32,16 @@ struct DshLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(alignment: .leading, spacing: 2) {
-            Text(state.title).font(.headline).lineLimit(1)
-            Text(state.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(state.title.isEmpty ? "DSH" : state.title)
+              .font(.headline).foregroundStyle(.white).lineLimit(1)
+            Text(state.text).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(2)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
       } compactLeading: {
-        Image(systemName: glyph(state.kind)).foregroundStyle(tint(state.kind))
+        Image(systemName: glyph(state.kind))
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(tint(state.kind))
       } compactTrailing: {
         CompactTrailing(state: state)
       } minimal: {
@@ -63,7 +66,7 @@ struct DshLiveActivityWidget: Widget {
     case "waiting": return .yellow
     case "done": return .green
     case "failed": return .red
-    default: return .accentColor
+    default: return .white
     }
   }
 }
@@ -75,7 +78,7 @@ private struct Counter: View {
     if let since = state.since, state.kind == "running" || state.kind == "waiting" {
       Text(timerInterval: since...Date.distantFuture, countsDown: false)
         .font(.caption.monospacedDigit())
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.white.opacity(0.8))
     } else {
       Text(state.chip).font(.caption).foregroundStyle(.secondary)
     }
@@ -88,9 +91,9 @@ private struct CompactTrailing: View {
   var body: some View {
     if let since = state.since, state.kind == "running" || state.kind == "waiting" {
       Text(timerInterval: since...Date.distantFuture, countsDown: false)
-        .font(.caption2.monospacedDigit())
+        .font(.caption2.monospacedDigit()).foregroundStyle(.white)
     } else {
-      Text(shortChip).font(.caption2)
+      Text(shortChip).font(.caption2).foregroundStyle(.white)
     }
   }
 
@@ -112,13 +115,13 @@ private struct LockScreenCard: View {
       Image(systemName: glyph).font(.title3)
         .foregroundStyle(tint)
       VStack(alignment: .leading, spacing: 2) {
-        Text(state.title).font(.headline).lineLimit(1)
-        Text(state.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        Text(state.title).font(.headline).foregroundStyle(.white).lineLimit(1)
+        Text(state.text).font(.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
       }
       Spacer(minLength: 8)
       if let since = state.since, state.kind == "running" || state.kind == "waiting" {
         Text(timerInterval: since...Date.distantFuture, countsDown: false)
-          .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+          .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.8))
       }
     }
     .padding(12)
@@ -138,7 +141,7 @@ private struct LockScreenCard: View {
     case "waiting": return .yellow
     case "done": return .green
     case "failed": return .red
-    default: return .accentColor
+    default: return .white
     }
   }
 }
