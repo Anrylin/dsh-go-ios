@@ -8330,6 +8330,12 @@ abstract class L10n {
   /// **'去设置'**
   String get creditsOpenSettings;
 
+  /// No description provided for @creditsTest.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试连接'**
+  String get creditsTest;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

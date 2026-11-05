@@ -60,14 +60,48 @@ class CreditsSettingsSection extends ConsumerWidget {
             onDone: (v) => notifier.setSource(token: v),
           ),
         ),
-        if (config.configured)
+        if (config.configured) ...[
           SettingsTile(
             icon: Icons.insights,
             title: l10n.creditsPreview,
             chevron: true,
             onTap: () => unawaited(showCreditsSheet(context)),
           ),
+          SettingsTile(
+            icon: Icons.wifi_tethering,
+            title: l10n.creditsTest,
+            chevron: true,
+            onTap: () => unawaited(_test(context, config)),
+          ),
+        ],
       ],
+    );
+  }
+
+  /// 点一下就知道卡在哪:地址、HTTP 码、错误原文、合计。
+  Future<void> _test(BuildContext context, CreditsConfig config) async {
+    final url = endpointFor(config.baseUrl);
+    String body;
+    try {
+      final snapshot = await fetchCredits(config);
+      body = '${config.baseUrl}\n→ $url\n\nOK · 合计 ${snapshot.total}'
+          ' · ${snapshot.knownCount} 个账号';
+    } on Object catch (error) {
+      body = '${config.baseUrl}\n→ $url\n\n失败：$error';
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(context.l10n.creditsTest),
+        content: SelectableText(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: Text(context.l10n.commonClose),
+          ),
+        ],
+      ),
     );
   }
 

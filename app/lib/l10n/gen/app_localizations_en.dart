@@ -4818,6 +4818,9 @@ class L10nEn extends L10n {
   String get creditsOpenSettings => 'Open settings';
 
   @override
+  String get creditsTest => 'Test connection';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

@@ -42,5 +42,6 @@
   },
   "creditsRefresh": "刷新",
   "creditsRefreshing": "刷新中…",
-  "creditsOpenSettings": "去设置"
+  "creditsOpenSettings": "去设置",
+  "creditsTest": "测试连接"
 }

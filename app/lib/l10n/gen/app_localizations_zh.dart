@@ -4528,6 +4528,9 @@ class L10nZh extends L10n {
   String get creditsOpenSettings => '去设置';
 
   @override
+  String get creditsTest => '测试连接';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

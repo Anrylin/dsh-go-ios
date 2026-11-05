@@ -120,8 +120,7 @@ final _client = http.Client();
 /// [onSent] fires when the request actually goes out, so the card can show how
 /// long the panel took instead of an open-ended spinner.
 Future<CreditsSnapshot> fetchCredits(CreditsConfig config, {void Function()? onSent}) async {
-  final base = config.baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
-  final uri = Uri.parse('$base/api/accounts/credits-snapshot');
+  final uri = Uri.parse(endpointFor(config.baseUrl));
   onSent?.call();
   // One retry: the panel is behind a home connection, and a dropped keep-alive
   // socket fails instantly while the second attempt succeeds.
@@ -143,8 +142,8 @@ Future<CreditsSnapshot> fetchCredits(CreditsConfig config, {void Function()? onS
     // and port 80 answers a different app with a 404 for /api/...
     throw CreditsError(
       response.statusCode == 404
-          ? 'HTTP 404（地址不对？要带端口，例如 http://IP:7864）'
-          : 'HTTP ${response.statusCode}',
+          ? 'HTTP 404 · 地址可能不对：$uri'
+          : 'HTTP ${response.statusCode} · $uri',
     );
   }
   final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
@@ -178,4 +177,19 @@ class CreditsError implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+
+/// 把用户填的东西整理成真正的接口地址。
+///
+/// 常见填法都要能work：`http://ip:7864`、`http://ip:7864/`、
+/// `http://ip:7864/api`、甚至整条 `…/api/accounts/credits-snapshot`。
+String endpointFor(String raw) {
+  var base = raw.trim();
+  if (base.isEmpty) return '';
+  const path = '/api/accounts/credits-snapshot';
+  if (base.endsWith(path)) return base;
+  base = base.replaceAll(RegExp(r'/+$'), '');
+  if (base.endsWith('/api')) return '$base/accounts/credits-snapshot';
+  return '$base$path';
 }

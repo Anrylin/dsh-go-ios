@@ -42,5 +42,6 @@
   },
   "creditsRefresh": "Refresh",
   "creditsRefreshing": "Refreshing…",
-  "creditsOpenSettings": "Open settings"
+  "creditsOpenSettings": "Open settings",
+  "creditsTest": "Test connection"
 }
