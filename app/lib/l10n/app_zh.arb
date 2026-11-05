@@ -2898,6 +2898,7 @@
   },
   "creditsRefresh": "刷新",
   "creditsRefreshing": "刷新中…",
+  "creditsOpenSettings": "去设置",
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
   "engineNewChatDefaultsFixed": "新对话默认（固定）",
   "engineNewChatUseLast": "沿用上次",

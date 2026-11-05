@@ -41,5 +41,6 @@
     }
   },
   "creditsRefresh": "Refresh",
-  "creditsRefreshing": "Refreshing…"
+  "creditsRefreshing": "Refreshing…",
+  "creditsOpenSettings": "Open settings"
 }

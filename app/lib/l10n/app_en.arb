@@ -1372,6 +1372,7 @@
   "creditsSnapshotAt": "registered {time}",
   "creditsRefresh": "Refresh",
   "creditsRefreshing": "Refreshing…",
+  "creditsOpenSettings": "Open settings",
   "engineNewChatDefaultsLast": "New chat defaults (last choice)",
   "engineNewChatDefaultsFixed": "New chat defaults (fixed)",
   "engineNewChatUseLast": "Last choice",

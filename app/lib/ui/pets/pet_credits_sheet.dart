@@ -4,6 +4,8 @@
 // 卡片自己发请求，不走 provider：这样刷新失败时还能把上一次的数字留在屏幕上，
 // 而不是整张卡变成错误页；刷新中显示转圈并禁用按钮，不会出现「点了没反应」。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +13,7 @@ import '../../l10n/l10n.dart';
 import '../../state/credits_state.dart';
 import '../common/app_sheet.dart';
 import '../common/sheet_title_bar.dart';
+import 'pet_settings_page.dart';
 import '../theme/theme.dart';
 
 Future<void> showCreditsSheet(BuildContext context) =>
@@ -78,8 +81,21 @@ class _CreditsSheetState extends ConsumerState<_CreditsSheet> {
           SheetTitleBar(l10n.creditsTitle),
           if (!config.configured)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-              child: Text(l10n.creditsNotSet, style: theme.textTheme.bodyMedium),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.creditsNotSet, style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 12),
+                  FilledButton.tonal(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      unawaited(PetSettingsPage.open(context));
+                    },
+                    child: Text(l10n.creditsOpenSettings),
+                  ),
+                ],
+              ),
             )
           else ...[
             Padding(
@@ -101,6 +117,7 @@ class _CreditsSheetState extends ConsumerState<_CreditsSheet> {
                             if (_last != null) l10n.creditsAccounts(_last!.knownCount),
                             if (_last != null) l10n.creditsSnapshotAt(_clock(_last!.at)),
                             if (_tookMs != null) '${_tookMs}ms',
+                            if (_last != null) config.baseUrl,
                           ].join(' · '),
                           style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
                         ),

@@ -1,5 +1,8 @@
 // WorkBuddy 积分/余额：读你自己面板上的一个只读接口，点宠物时显示。
 //
+// 地址与令牌存在 Keychain（flutter_secure_storage）：卸载重装之后还在，
+// 开关这类非敏感项留在 SharedPreferences。
+//
 // 面板接口是 `GET {base}/api/accounts/credits-snapshot`，只回面板已经登记下来的
 // 余额（不触发上游查询），用只读 API Token（`wbt_…`）调用即可，所以这个凭据
 // 泄露也只能读积分。令牌和地址都存在本机 SharedPreferences 里，不进日志、
@@ -11,6 +14,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 @immutable
@@ -57,8 +61,10 @@ class CreditsSnapshot {
 
 class CreditsConfigController extends Notifier<CreditsConfig> {
   static const _kEnabled = 'credits.enabled';
+  // Keychain: survives a reinstall, which the app container does not.
   static const _kBase = 'credits.baseUrl';
   static const _kToken = 'credits.token';
+  static const _vault = FlutterSecureStorage();
 
   @override
   CreditsConfig build() {
@@ -68,11 +74,19 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
 
   Future<void> _load() async {
     final store = await SharedPreferences.getInstance();
-    final next = CreditsConfig(
-      enabled: store.getBool(_kEnabled) ?? false,
-      baseUrl: store.getString(_kBase) ?? '',
-      token: store.getString(_kToken) ?? '',
-    );
+    String base = '';
+    String token = '';
+    try {
+      base = await _vault.read(key: _kBase) ?? '';
+      token = await _vault.read(key: _kToken) ?? '';
+    } on Object {
+      // No Keychain (tests, other platforms): fall back to the old place so an
+      // install that already had them keeps working.
+      base = store.getString(_kBase) ?? '';
+      token = store.getString(_kToken) ?? '';
+    }
+    final enabled = store.getBool(_kEnabled) ?? (base.isNotEmpty && token.isNotEmpty);
+    final next = CreditsConfig(enabled: enabled, baseUrl: base, token: token);
     if (next != state) state = next;
   }
 
@@ -85,8 +99,13 @@ class CreditsConfigController extends Notifier<CreditsConfig> {
     state = next;
     final store = await SharedPreferences.getInstance();
     await store.setBool(_kEnabled, next.enabled);
-    await store.setString(_kBase, next.baseUrl);
-    await store.setString(_kToken, next.token);
+    try {
+      await _vault.write(key: _kBase, value: next.baseUrl);
+      await _vault.write(key: _kToken, value: next.token);
+    } on Object {
+      await store.setString(_kBase, next.baseUrl);
+      await store.setString(_kToken, next.token);
+    }
   }
 }
 

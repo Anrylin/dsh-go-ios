@@ -757,7 +757,9 @@ class PetLayerState extends ConsumerState<PetLayer> with TickerProviderStateMixi
     final left = details.localPosition.dx < pack.anchorX * _scale;
     _play(pack.reaction(left ? 'tapLeft' : 'tapRight'));
     // 配置了余额面板时，同一拍把积分卡弹出来（数据有缓存，连点不刷）。
-    if (ref.read(creditsConfigProvider).configured) {
+    // 开关只是「是否响应点击」；没配地址也让卡片弹出来，里面给出设置入口，
+    // 否则点了没反应，看起来像坏了。
+    if (ref.read(creditsConfigProvider).enabled) {
       unawaited(showCreditsSheet(context));
     }
   }
