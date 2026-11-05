@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -221,7 +222,10 @@ class _NotificationSettingsPageState extends ConsumerState<NotificationSettingsP
         if (liveBlocked) _liveNote(),
         SettingsSection(
           title: l10n.liveSettingsTitle,
-          footer: ohos ? null : Text(l10n.liveSettingsFooter),
+          footer: ohos
+              ? null
+              // iOS 只需要说清锁屏卡片和灵动岛的门槛，厂商清单是 Android 的事。
+              : Text(Platform.isIOS ? l10n.liveSettingsFooterIos : l10n.liveSettingsFooter),
           children: [
             SettingsSwitchTile(
               spot: Spots.notifyLive,
