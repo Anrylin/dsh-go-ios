@@ -7743,6 +7743,9 @@ class L10nZh extends L10n {
   String get liveBlockedText => '在系统设置里为 DSH Go 打开「实时活动」（有的手机叫「在流体云中显示」）';
 
   @override
+  String get liveSettingsFooterIos => 'iOS：锁屏卡片在 16.2+ 显示，灵动岛要 iPhone 14 Pro 及以上；App 被划掉后不再更新。';
+
+  @override
   String get localeTitle => '语言';
 
   @override

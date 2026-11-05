@@ -285,6 +285,15 @@ class _ChatListState extends ConsumerState<ChatList> {
     _hasNew.value = false;
     _showJump.value = false;
     _stopScrolling();
+    if (_scroll.hasClients) {
+      final p = _scroll.position;
+      // 一次到位:只排 follow 的话,第一下看起来没动,用户就点了第二下。
+      p.animateTo(
+        p.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    }
     _follow();
   }
 
@@ -304,7 +313,10 @@ class _ChatListState extends ConsumerState<ChatList> {
     final p = _scroll.position;
     final here = p.pixels;
     var target = -1;
-    for (var i = _indexAtOffset(here - 8); i >= 0 && i < _rows.length; i--) {
+    // 从当前位置所在行的**上一行**开始:跳过去之后目标行的顶就是 here,
+    // 从它自己开始找会原地不动,表现出来就是"点一次有用,再点不动"。
+    final start = _indexAtOffset(here) - 1;
+    for (var i = start; i >= 0 && i < _rows.length; i--) {
       if (_rows[i] is UserRow) {
         target = i;
         break;

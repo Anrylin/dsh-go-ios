@@ -14210,6 +14210,12 @@ abstract class L10n {
   /// **'在系统设置里为 DSH Go 打开「实时活动」（有的手机叫「在流体云中显示」）'**
   String get liveBlockedText;
 
+  /// No description provided for @liveSettingsFooterIos.
+  ///
+  /// In zh, this message translates to:
+  /// **'iOS：锁屏卡片在 16.2+ 显示，灵动岛要 iPhone 14 Pro 及以上；App 被划掉后不再更新。'**
+  String get liveSettingsFooterIos;
+
   /// No description provided for @localeTitle.
   ///
   /// In zh, this message translates to:
