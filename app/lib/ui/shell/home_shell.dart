@@ -510,7 +510,13 @@ class _DrawerOverlay extends StatelessWidget {
                 ignoring: progress == 0,
                 child: GestureDetector(
                   onTap: onClose,
-                  child: ColoredBox(color: scrim.withValues(alpha: scrim.a * progress)),
+                  // 压暗层只用六成透明度和一条缓出曲线：之前跟手时几乎立刻
+                  // 到位，看着像"一下子暗下来"。
+                  child: ColoredBox(
+                    color: scrim.withValues(
+                      alpha: scrim.a * 0.6 * Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0)),
+                    ),
+                  ),
                 ),
               ),
             ),
