@@ -8,21 +8,21 @@ import Flutter
 import Foundation
 
 enum LiveActivityBridge {
-  /// iOS 16.1 起才有 ActivityKit；更低的系统按「没有」处理，和别的通道一致。
+  /// 16.2 起才有带 ActivityContent 的一套 API（16.1 只有旧的 request(contentState:)）；更低的系统按「没有」处理，和别的通道一致。
   static var supported: Bool {
-    if #available(iOS 16.1, *) { return true }
+    if #available(iOS 16.2, *) { return true }
     return false
   }
 
   static func status() -> [String: Any] {
-    if #available(iOS 16.1, *) {
+    if #available(iOS 16.2, *) {
       return ["supported": true, "allowed": ActivityAuthorizationInfo().areActivitiesEnabled]
     }
     return ["supported": false, "allowed": false]
   }
 
   static func apply(_ args: [String: Any], result: @escaping FlutterResult) {
-    guard #available(iOS 16.1, *) else {
+    guard #available(iOS 16.2, *) else {
       result(nil)
       return
     }
@@ -44,7 +44,7 @@ enum LiveActivityBridge {
     }
   }
 
-  @available(iOS 16.1, *)
+  @available(iOS 16.2, *)
   private static func contentState(_ map: [String: Any]) -> DshActivityAttributes.ContentState {
     let sinceMs = map["sinceMs"] as? Double
     return DshActivityAttributes.ContentState(
@@ -59,7 +59,7 @@ enum LiveActivityBridge {
     )
   }
 
-  @available(iOS 16.1, *)
+  @available(iOS 16.2, *)
   private static func show(
     state: DshActivityAttributes.ContentState,
     sessionId: String
@@ -85,7 +85,7 @@ enum LiveActivityBridge {
     )
   }
 
-  @available(iOS 16.1, *)
+  @available(iOS 16.2, *)
   private static func endAll() async {
     for activity in Activity<DshActivityAttributes>.activities {
       await activity.end(nil, dismissalPolicy: .immediate)
