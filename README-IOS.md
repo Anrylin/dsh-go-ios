@@ -1,5 +1,9 @@
 # DSH Go for iOS —— 自建 IPA 说明
 
+> 这个 fork 相对上游改了什么、加了什么，逐条写在 [CHANGELOG-IOS.md](CHANGELOG-IOS.md)：
+> 后台保活、点宠物看 WorkBuddy 积分、Codemagic 构建（新增），页脚连接状态、抽屉
+> 手势、GitHub 队列与失败日志（修改）。
+
 这是 [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) 的 `feat/ios-foundation`
 分支（AGPL-3.0）加上一条 GitHub Actions 流水线，用来在**没有任何 Mac**的情况下产出一个
 unsigned `.ipa`。签名和安装在你自己的手机上完成。
