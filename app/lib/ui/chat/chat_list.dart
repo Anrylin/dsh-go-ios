@@ -625,9 +625,15 @@ class _ChatListState extends ConsumerState<ChatList> {
           final anchor = viewport <= 0 ? 1.0 : ((viewport - bottomPad) / viewport).clamp(0.0, 1.0);
           _anchorPixels = viewport * anchor;
 
-          return Stack(
-            children: [
-              Listener(
+          return GestureDetector(
+            // 点空白处收起输入法。列表只处理了拖动（onDrag），点一下什么都不做,
+            // 空着输入框时就有"键盘赖着不走"的感觉。子控件自己的点击在手势
+            // 竞技场里优先,所以点消息、点按钮都不受影响。
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: Stack(
+              children: [
+                Listener(
                 onPointerDown: (_) => _held = true,
                 child: NotificationListener<ScrollMetricsNotification>(
                   onNotification: _onMetrics,
@@ -719,8 +725,9 @@ class _ChatListState extends ConsumerState<ChatList> {
                     ],
                   ),
                 ),
-              ),
-            ],
+                ),
+              ],
+            ),
           );
         },
       ),
