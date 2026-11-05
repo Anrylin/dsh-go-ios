@@ -7772,6 +7772,12 @@ abstract class L10n {
   /// **'{name}，{description}'**
   String chatArtifactSemantics(String name, String description);
 
+  /// No description provided for @chatJumpToQuestion.
+  ///
+  /// In zh, this message translates to:
+  /// **'上一条提问'**
+  String get chatJumpToQuestion;
+
   /// No description provided for @commonCancel.
   ///
   /// In zh, this message translates to:
@@ -8237,7 +8243,7 @@ abstract class L10n {
   /// No description provided for @creditsFooter.
   ///
   /// In zh, this message translates to:
-  /// **'只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。'**
+  /// **'只读接口：面板的 /api/accounts/credits-snapshot。读到的是面板自己登记下来的余额，上游由面板的定时任务刷新；只读令牌不能强制它去问上游，所以连点两次数字相同是正常的。令牌只存在这台手机上。'**
   String get creditsFooter;
 
   /// No description provided for @creditsEnable.

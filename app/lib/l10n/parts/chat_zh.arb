@@ -729,5 +729,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "chatJumpToQuestion": "上一条提问"
 }

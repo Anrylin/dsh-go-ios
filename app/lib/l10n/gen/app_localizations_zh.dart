@@ -4236,6 +4236,9 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get chatJumpToQuestion => '上一条提问';
+
+  @override
   String get commonCancel => '取消';
 
   @override
@@ -4471,7 +4474,8 @@ class L10nZh extends L10n {
   String get creditsTitle => '余额 / 积分';
 
   @override
-  String get creditsFooter => '只读接口：面板的 /api/accounts/credits-snapshot。令牌只存在这台手机上。';
+  String get creditsFooter =>
+      '只读接口：面板的 /api/accounts/credits-snapshot。读到的是面板自己登记下来的余额，上游由面板的定时任务刷新；只读令牌不能强制它去问上游，所以连点两次数字相同是正常的。令牌只存在这台手机上。';
 
   @override
   String get creditsEnable => '点宠物显示余额';

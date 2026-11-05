@@ -4510,6 +4510,9 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get chatJumpToQuestion => 'Previous question';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override
@@ -4762,7 +4765,7 @@ class L10nEn extends L10n {
 
   @override
   String get creditsFooter =>
-      'Read-only endpoint: the panel\'s /api/accounts/credits-snapshot. The token stays on this phone.';
+      'Read-only endpoint: the panel\'s /api/accounts/credits-snapshot. These are the numbers the panel has registered; its own scheduled task is what refreshes them upstream, and a read-only token cannot force that, so two refreshes in a row showing the same numbers is normal. The token stays on this phone.';
 
   @override
   String get creditsEnable => 'Show the balance when the pet is tapped';

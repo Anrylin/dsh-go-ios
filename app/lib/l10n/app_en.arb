@@ -1280,6 +1280,7 @@
   "chatTodoItemSemantics": "{content}, {state}",
   "chatMentionSemantics": "{kind}: {label}",
   "chatArtifactSemantics": "{name}, {description}",
+  "chatJumpToQuestion": "Previous question",
   "commonCancel": "Cancel",
   "commonRetry": "Retry",
   "commonClose": "Close",

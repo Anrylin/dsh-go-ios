@@ -2760,6 +2760,7 @@
       }
     }
   },
+  "chatJumpToQuestion": "上一条提问",
   "commonCancel": "取消",
   "commonRetry": "重试",
   "commonClose": "关闭",

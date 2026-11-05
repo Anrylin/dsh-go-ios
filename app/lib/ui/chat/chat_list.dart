@@ -28,6 +28,7 @@ import '../common/bleed.dart';
 import '../common/ui_trace.dart';
 import '../pets/pet_perch.dart';
 import '../theme/app_icons.dart';
+import '../theme/dsh_glyphs.dart';
 import '../theme/theme.dart';
 import '../update/update_sheet.dart' show checkForUpdates;
 import 'chat_rows.dart';
@@ -283,7 +284,74 @@ class _ChatListState extends ConsumerState<ChatList> {
     _pinned = true;
     _hasNew.value = false;
     _showJump.value = false;
+    _stopScrolling();
     _follow();
+  }
+
+  /// A fling (or a finger still down) owns the offset: a jump issued in the
+  /// middle of it is overridden on the next frame, which read as "the key does
+  /// nothing until the list stops". Ending the activity first makes the tap work
+  /// whenever it lands.
+  void _stopScrolling() {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    p.jumpTo(p.pixels);
+  }
+
+  /// 跳到「我上一次发的问题」:从当前位置往上找最近的一条用户消息。
+  void jumpToPreviousQuestion() {
+    if (!_scroll.hasClients || _rows.isEmpty) return;
+    final p = _scroll.position;
+    final here = p.pixels;
+    var target = -1;
+    for (var i = _indexAtOffset(here - 8); i >= 0 && i < _rows.length; i--) {
+      if (_rows[i] is UserRow) {
+        target = i;
+        break;
+      }
+    }
+    if (target < 0) return;
+    _pinned = false;
+    _stopScrolling();
+    final offset = _offsetOf(target).clamp(p.minScrollExtent, p.maxScrollExtent);
+    p.animateTo(offset, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+    _showJump.value = true;
+  }
+
+  /// Row heights as they get built: the list is lazy, so an index has no offset
+  /// until its row has been on screen at least once. Unseen rows use the average.
+  final Map<String, double> _rowHeights = {};
+
+  double get _averageRowHeight {
+    if (_rowHeights.isEmpty) return 88;
+    final total = _rowHeights.values.fold<double>(0, (a, b) => a + b);
+    return total / _rowHeights.length;
+  }
+
+  double _offsetOf(int index) {
+    var sum = widget.topInset + AppSpace.sm;
+    final average = _averageRowHeight;
+    for (var i = 0; i < index && i < _rows.length; i++) {
+      sum += _rowHeights[_rows[i].key] ?? average;
+    }
+    return sum;
+  }
+
+  int _indexAtOffset(double offset) {
+    var sum = widget.topInset + AppSpace.sm;
+    final average = _averageRowHeight;
+    for (var i = 0; i < _rows.length; i++) {
+      sum += _rowHeights[_rows[i].key] ?? average;
+      if (sum > offset) return i;
+    }
+    return _rows.length - 1;
+  }
+
+  void _recordRowHeight(String key, double height) {
+    if (height <= 0) return;
+    final known = _rowHeights[key];
+    if (known != null && (known - height).abs() < 0.5) return;
+    _rowHeights[key] = height;
   }
 
   void _reportScrolledUnder(ScrollMetrics m) {
@@ -608,11 +676,35 @@ class _ChatListState extends ConsumerState<ChatList> {
                 child: ValueListenableBuilder<bool>(
                   valueListenable: _showJump,
                   builder: (context, visible, child) => PetAvoid(active: visible, child: child!),
-                  child: _JumpToBottom(
-                    visible: _showJump,
-                    hasNew: _hasNew,
-                    waiting: s.questions.length + s.approvals.where((a) => !s.autoAnswered.contains(a.eventId)).length,
-                    onTap: jumpToBottom,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // 上一条提问:离开底部时才有意义,和「回到底部」成对出现。
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _showJump,
+                        builder: (context, visible, child) => AnimatedSlide(
+                          offset: visible ? Offset.zero : const Offset(0, 0.3),
+                          duration: AppMotion.of(context, AppMotion.quick),
+                          curve: AppMotion.std,
+                          child: AnimatedOpacity(
+                            opacity: visible ? 1 : 0,
+                            duration: AppMotion.of(context, AppMotion.quick),
+                            child: IgnorePointer(ignoring: !visible, child: child),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _JumpToQuestion(onTap: jumpToPreviousQuestion),
+                        ),
+                      ),
+                      _JumpToBottom(
+                        visible: _showJump,
+                        hasNew: _hasNew,
+                        waiting: s.questions.length + s.approvals.where((a) => !s.autoAnswered.contains(a.eventId)).length,
+                        onTap: jumpToBottom,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -633,10 +725,14 @@ class _ChatListState extends ConsumerState<ChatList> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppSpace.readingWidth),
           // 撑满阅读宽度:否则短行(用户气泡、提示行)会被 Center 居中。
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0),
-            child: StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row)),
+          child: _RowMeasure(
+            rowKey: row.key,
+            onHeight: _recordRowHeight,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0),
+              child: StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row)),
+            ),
           ),
         ),
       ),
@@ -1252,5 +1348,64 @@ class _TopBoundedScrollPosition extends ScrollPositionWithSingleContext {
       }
     }
     return super.applyContentDimensions(minScrollExtent, maxScrollExtent);
+  }
+}
+
+
+/// 报告一行的高度,给「上一条提问」算目标偏移用。只记录,不 setState。
+class _RowMeasure extends StatefulWidget {
+  const _RowMeasure({required this.rowKey, required this.onHeight, required this.child});
+
+  final String rowKey;
+  final void Function(String key, double height) onHeight;
+  final Widget child;
+
+  @override
+  State<_RowMeasure> createState() => _RowMeasureState();
+}
+
+class _RowMeasureState extends State<_RowMeasure> {
+  double? _last;
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final size = context.size;
+      if (size == null) return;
+      if (_last != null && (_last! - size.height).abs() < 0.5) return;
+      _last = size.height;
+      widget.onHeight(widget.rowKey, size.height);
+    });
+    return widget.child;
+  }
+}
+
+
+/// 上一条提问:和「回到底部」同规格的玻璃圆钮,箭头朝上。
+class _JumpToQuestion extends StatelessWidget {
+  const _JumpToQuestion({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: l10n.chatJumpToQuestion,
+      excludeSemantics: true,
+      child: SizedBox.square(
+        dimension: 44,
+        child: GlassSurface(
+          tier: GlassTier.chrome,
+          blur: false,
+          circle: true,
+          onTap: onTap,
+          child: Center(child: Icon(DshGlyphs.arrowUp, size: 22, color: colors.onSurface)),
+        ),
+      ),
+    );
   }
 }
