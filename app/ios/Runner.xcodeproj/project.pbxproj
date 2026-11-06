@@ -10,7 +10,6 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		43AB861D1B6F50C4F2DA878E /* DshLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 03FD21E82E38A1B6BC7ACF2D /* DshLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		51FA141038125A44DF1FA421 /* DshActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E45230C1E68D92C1275CA19 /* DshActivityAttributes.swift */; };
 		7134531779C36EBC735B9074 /* UsageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E047F3D7E03586BDCDC3F4 /* UsageChannel.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
@@ -34,13 +33,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		018EF68BB92D30D01C27A960 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D9DEC8AB9002AF59E368D33D;
-			remoteInfo = DshLiveActivity;
-		};
 		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -75,7 +67,6 @@
 			dstSubfolderSpec = 13;
 			files = (
 				D5480000000000000000B008 /* ShareExtension.appex in Embed Foundation Extensions */,
-				43AB861D1B6F50C4F2DA878E /* DshLiveActivity.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -124,14 +115,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B91761E59909A21EE3BF95BB /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				BC7B9E0BC4CA07EB80759ECA /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,7 +268,6 @@
 			);
 			dependencies = (
 				D5480000000000000000B015 /* PBXTargetDependency */,
-				3B4EC4D25FD83F8BFF7CE3B7 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -310,23 +292,6 @@
 			name = ShareExtension;
 			productName = ShareExtension;
 			productReference = D5480000000000000000B009 /* ShareExtension.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		D9DEC8AB9002AF59E368D33D /* DshLiveActivity */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = F0DD2BB371BD208DA2350B44 /* Build configuration list for PBXNativeTarget "DshLiveActivity" */;
-			buildPhases = (
-				DC80206426E6EF785F0D17CB /* Sources */,
-				B91761E59909A21EE3BF95BB /* Frameworks */,
-				FFA8E8AC384B29F3F93A3F7F /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = DshLiveActivity;
-			productName = DshLiveActivity;
-			productReference = 03FD21E82E38A1B6BC7ACF2D /* DshLiveActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -369,7 +334,6 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				D5480000000000000000B010 /* ShareExtension */,
-				D9DEC8AB9002AF59E368D33D /* DshLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -395,13 +359,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D5480000000000000000B014 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		FFA8E8AC384B29F3F93A3F7F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -479,15 +436,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DC80206426E6EF785F0D17CB /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				51FA141038125A44DF1FA421 /* DshActivityAttributes.swift in Sources */,
-				A4F0A7AFF883F096CF197BA7 /* DshLiveActivityWidget.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -495,12 +443,6 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
-		};
-		3B4EC4D25FD83F8BFF7CE3B7 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = DshLiveActivity;
-			target = D9DEC8AB9002AF59E368D33D /* DshLiveActivity */;
-			targetProxy = 018EF68BB92D30D01C27A960 /* PBXContainerItemProxy */;
 		};
 		D5480000000000000000B015 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1000,16 +942,6 @@
 				D5480000000000000000B016 /* Debug */,
 				D5480000000000000000B017 /* Release */,
 				D5480000000000000000B018 /* Profile */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		F0DD2BB371BD208DA2350B44 /* Build configuration list for PBXNativeTarget "DshLiveActivity" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				180C7DE56CBC4CA2ABB41BD3 /* Release */,
-				2B89FF668A483CD2C7BBC83E /* Debug */,
-				D11AB7D05552C1A335055DB0 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
