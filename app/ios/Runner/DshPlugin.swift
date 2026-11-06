@@ -41,6 +41,7 @@ final class DshPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
       // activating a stream with no handler reports an error to Flutter.
       SilentEvents(name: "dsh/runtime/events", messenger: messenger),
     ]
+    LocalEngine.shared.register(messenger: messenger)
     super.init()
   }
 
