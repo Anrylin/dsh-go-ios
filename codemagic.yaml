@@ -12,11 +12,17 @@ workflows:
     scripts:
       - name: Node engine for the local option
         script: |
-          # 只有 local-engine 分支需要:iOS 跑不了可执行文件,只能用编进 App 的 Node 库。
-          if [ "${CM_BRANCH:-}" = "local-engine" ] || grep -q "engine_local" app/pubspec.yaml; then
+          # 只有带本机引擎的分支需要:iOS 跑不了可执行文件,只能用编进 App 的 Node 库。
+          set +e
+          {
             bash tooling/ios/fetch-node.sh
+            echo "--- fetch exit: $? ---"
             ruby tooling/ios/add-node-framework.rb
-          fi
+            echo "--- link exit: $? ---"
+          } 2>&1 | tee "$CM_BUILD_DIR/node.log"
+          status=${PIPESTATUS[0]}
+          tail -n 40 "$CM_BUILD_DIR/node.log"
+          exit $status
       - name: Dependencies
         script: |
           cd app
@@ -48,6 +54,7 @@ workflows:
             > "$CM_BUILD_DIR/dsh-go-ios-unsigned.ipa.sha256"
           ls -lh "$CM_BUILD_DIR/dsh-go-ios-unsigned.ipa"
     artifacts:
+      - node.log
       - build.log
       - dsh-go-ios-unsigned.ipa
       - dsh-go-ios-unsigned.ipa.sha256
