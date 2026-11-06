@@ -169,6 +169,10 @@ class RunPulse extends ChangeNotifier {
   final void Function(int input, int output)? onUsage;
 
   /// 最近一次收到的 usage（输入/输出/缓存），给输入框下面那行统计用。
+  /// 估算的输出 token（跑动时实时涨,回合结束后被真实 usage 覆盖）。
+  int get estimatedOutput => _estimatedOutput;
+  int _estimatedOutput = 0;
+
   dsh.TokenUsage? get lastUsage => _lastUsage;
   dsh.TokenUsage? _lastUsage;
 
@@ -245,6 +249,7 @@ class RunPulse extends ChangeNotifier {
     final tokens = estimateTokens(text);
     if (tokens <= 0) return;
     _attemptEstimate[attempt] = (_attemptEstimate[attempt] ?? 0) + tokens;
+    _estimatedOutput += tokens.ceil();
     final now = _clock();
     final local = skew == null ? now : time.add(skew);
     meter.add(local.isAfter(now) ? now : local, tokens);

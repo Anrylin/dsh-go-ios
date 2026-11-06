@@ -27,7 +27,11 @@ class SessionStatsLine extends ConsumerWidget {
         final colors = DshColors.of(context);
         final parts = <String>[
           if (usage != null) '↑${formatTokens(usage.inputTokens)}',
-          if (usage != null) '↓${formatTokens(usage.outputTokens)}',
+          // 跑动时输出数还没来,先用脉冲的估算顶上去（带 ≈）。
+          if (speed > 0 && usage == null)
+            '≈${formatTokens(pulse.estimatedOutput)}'
+          else if (usage != null)
+            '↓${formatTokens(usage.outputTokens)}',
           if (usage?.cacheReadTokens case final cached? when cached > 0)
             '${context.l10n.statsCache} ${formatTokens(cached)}',
           if (speed > 0) '${speed.toStringAsFixed(speed < 10 ? 1 : 0)} tok/s',
