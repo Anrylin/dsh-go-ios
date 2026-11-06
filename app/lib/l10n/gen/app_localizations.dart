@@ -29924,6 +29924,12 @@ abstract class L10n {
   /// **'最近一次收到 usage：{time}'**
   String tokenUsageLastAt(String time);
 
+  /// No description provided for @statsCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get statsCache;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

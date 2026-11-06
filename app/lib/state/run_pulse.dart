@@ -7,7 +7,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_client/dsh_client.dart' as dsh;
+import 'package:dsh_client/dsh_client.dart' hide TokenUsage;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -167,6 +168,10 @@ class RunPulse extends ChangeNotifier {
   /// 一个回合结束时把 usage 交出去(今日用量)。为 null 时什么都不做。
   final void Function(int input, int output)? onUsage;
 
+  /// 最近一次收到的 usage（输入/输出/缓存），给输入框下面那行统计用。
+  dsh.TokenUsage? get lastUsage => _lastUsage;
+  dsh.TokenUsage? _lastUsage;
+
   final DateTime Function() _clock;
   final Duration tick;
   final TokenRateMeter meter;
@@ -231,7 +236,9 @@ class RunPulse extends ChangeNotifier {
     };
     if (chunk is UsageChunk) {
       _calibrate(_attemptEstimate[attempt], chunk.usage.outputTokens);
+      _lastUsage = chunk.usage;
       onUsage?.call(chunk.usage.inputTokens, chunk.usage.outputTokens);
+      notifyListeners();
       return;
     }
     if (text == null || text.isEmpty) return;

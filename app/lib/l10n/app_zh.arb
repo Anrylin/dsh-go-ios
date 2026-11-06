@@ -10320,6 +10320,7 @@
       }
     }
   },
+  "statsCache": "缓存",
   "updateCheck": "检查更新",
   "updateAutoCheck": "自动检查更新",
   "updateAutoCheckDaily": "每天检查一次",

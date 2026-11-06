@@ -17261,6 +17261,9 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get statsCache => 'cache';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

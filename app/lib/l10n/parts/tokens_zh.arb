@@ -16,5 +16,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "statsCache": "缓存"
 }

@@ -73,6 +73,7 @@ import 'balance_widgets.dart';
 import 'chat_header.dart';
 import 'chat_list.dart';
 import 'composer.dart';
+import 'widgets/session_stats_line.dart';
 import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
 import 'dock/dock_stack.dart';
@@ -1823,7 +1824,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                   ),
                                 if (readOnly)
                                   const ReadOnlyBar()
-                                else
+                                else ...[
                                   Composer(
                                     hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
                                     controller: _input,
@@ -1884,6 +1885,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                             onTap: () => _openUsage(sessionId, chat?.model),
                                           ),
                                   ),
+                                  if (sessionId != null) SessionStatsLine(sessionId: sessionId),
+                                ],
                               ],
                             ),
                           ),

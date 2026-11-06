@@ -16364,6 +16364,9 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get statsCache => '缓存';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override
