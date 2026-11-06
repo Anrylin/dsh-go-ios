@@ -12,14 +12,15 @@ group ||= project.main_group.new_group('vendor', 'vendor')
 ref = group.files.find { |f| f.path == 'NodeMobile.xcframework' } || group.new_reference(path)
 ref.source_tree = '<group>'
 
-unless runner.frameworks_build_phase.files_references.any? { |r| r.display_name == 'NodeMobile.xcframework' }
+# 工程里有 nil 引用(历史上删过文件),先 compact 再比名字,否则 display_name 落到 nil 上
+unless runner.frameworks_build_phase.files_references.compact.any? { |r| r.display_name == 'NodeMobile.xcframework' }
   runner.frameworks_build_phase.add_file_reference(ref)
 end
 
 embed = runner.copy_files_build_phases.find { |p| p.dst_subfolder_spec.to_s == '10' }
 embed ||= runner.new_copy_files_build_phase('Embed Frameworks')
 embed.dst_subfolder_spec = '10'
-unless embed.files_references.any? { |r| r.display_name == 'NodeMobile.xcframework' }
+unless embed.files_references.compact.any? { |r| r.display_name == 'NodeMobile.xcframework' }
   bf = embed.add_file_reference(ref)
   bf.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy', 'RemoveHeadersOnCopy'] }
 end
