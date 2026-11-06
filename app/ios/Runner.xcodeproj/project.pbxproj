@@ -10,17 +10,13 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		51FA141038125A44DF1FA421 /* DshActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E45230C1E68D92C1275CA19 /* DshActivityAttributes.swift */; };
 		7134531779C36EBC735B9074 /* UsageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E047F3D7E03586BDCDC3F4 /* UsageChannel.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
-		8390570FABDAB539299E9C56 /* DshActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E45230C1E68D92C1275CA19 /* DshActivityAttributes.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-		A4F0A7AFF883F096CF197BA7 /* DshLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF00B2DD58D257D58F7566D2 /* DshLiveActivityWidget.swift */; };
-		BC7B9E0BC4CA07EB80759ECA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ABE403A316BD170F4A03494 /* Foundation.framework */; };
 		D5480000000000000000A001 /* DshPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000A002 /* DshPlugin.swift */; };
 		D5480000000000000000A003 /* VoiceChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000A004 /* VoiceChannel.swift */; };
 		D5480000000000000000A005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000A006 /* InfoPlist.strings */; };
@@ -29,7 +25,6 @@
 		D5480000000000000000B005 /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000B004 /* ShareInbox.swift */; };
 		D5480000000000000000B006 /* ShareChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000B007 /* ShareChannel.swift */; };
 		D5480000000000000000B008 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D5480000000000000000B009 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		F9008C7EE57D2B964C928D8A /* LiveActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE3F397FE3313A025CD8F78E /* LiveActivityBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,7 +76,6 @@
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		49E047F3D7E03586BDCDC3F4 /* UsageChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UsageChannel.swift; sourceTree = "<group>"; };
-		5E45230C1E68D92C1275CA19 /* DshActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DshActivityAttributes.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -95,7 +89,6 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		BF00B2DD58D257D58F7566D2 /* DshLiveActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DshLiveActivityWidget.swift; sourceTree = "<group>"; };
 		D5480000000000000000A002 /* DshPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DshPlugin.swift; sourceTree = "<group>"; };
 		D5480000000000000000A004 /* VoiceChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceChannel.swift; sourceTree = "<group>"; };
 		D5480000000000000000A007 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
@@ -106,7 +99,6 @@
 		D5480000000000000000B00C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D5480000000000000000B00D /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		D5480000000000000000B00E /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
-		FE3F397FE3313A025CD8F78E /* LiveActivityBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -128,16 +120,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		124F5516E369687735D4497E /* LiveActivity */ = {
-			isa = PBXGroup;
-			children = (
-				5E45230C1E68D92C1275CA19 /* DshActivityAttributes.swift */,
-				BF00B2DD58D257D58F7566D2 /* DshLiveActivityWidget.swift */,
-			);
-			name = LiveActivity;
-			path = LiveActivity;
-			sourceTree = "<group>";
-		};
 		2F0D73D1435909397323120E /* iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -174,7 +156,6 @@
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				D5480000000000000000B011 /* ShareExtension */,
-				124F5516E369687735D4497E /* LiveActivity */,
 				F4F1EC1BCEA42E8D3078D6BD /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -207,7 +188,6 @@
 				D5480000000000000000B00E /* Runner.entitlements */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
-				FE3F397FE3313A025CD8F78E /* LiveActivityBridge.swift */,
 				49E047F3D7E03586BDCDC3F4 /* UsageChannel.swift */,
 			);
 			path = Runner;
@@ -421,8 +401,6 @@
 				D5480000000000000000B006 /* ShareChannel.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
-				8390570FABDAB539299E9C56 /* DshActivityAttributes.swift in Sources */,
-				F9008C7EE57D2B964C928D8A /* LiveActivityBridge.swift in Sources */,
 				7134531779C36EBC735B9074 /* UsageChannel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -479,30 +457,6 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		180C7DE56CBC4CA2ABB41BD3 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = LiveActivity/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0.9;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.ccch1mneyyy.dshgo.LiveActivity;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -577,30 +531,6 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Profile;
-		};
-		2B89FF668A483CD2C7BBC83E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = LiveActivity/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0.9;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.ccch1mneyyy.dshgo.LiveActivity;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
 		};
 		331C8088294A63A400263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -806,30 +736,6 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
-		};
-		D11AB7D05552C1A335055DB0 /* Profile */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = LiveActivity/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0.9;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.ccch1mneyyy.dshgo.LiveActivity;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Profile;
 		};
 		D5480000000000000000B016 /* Debug */ = {
 			isa = XCBuildConfiguration;
