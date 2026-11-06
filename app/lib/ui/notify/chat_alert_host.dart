@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/live_activity_state.dart';
+import '../../pets/pet_signals.dart';
 import '../../state/notify_state.dart';
 import '../bots/bot_alerts.dart';
 import '../common/discard_guard.dart';
@@ -54,9 +55,14 @@ class _ChatAlertHostState extends ConsumerState<ChatAlertHost> {
         // Off screen iOS would suspend the app and with it the host connection,
         // so no alert could be posted. A silent audio loop keeps it running;
         // back on screen the loop stops and the battery cost goes with it.
+        // 只在"真有活儿"时保活：有回合在跑或在等确认。空闲挂着会一直耗电,
+        // 而空闲时的提醒本来也等不到（进程被挂起，重连后会补）。
+        final signals = ref.read(petSignalsProvider);
+        final busy = signals.runs.isNotEmpty || signals.pending.isNotEmpty;
         final wanted = !onScreen &&
             ref.read(notifyPrefsProvider).enabled &&
-            ref.read(activeConnectionProvider).value != null;
+            ref.read(activeConnectionProvider).value != null &&
+            busy;
         unawaited(NotifyChannel().setBackgroundKeepAlive(wanted));
       },
     );
