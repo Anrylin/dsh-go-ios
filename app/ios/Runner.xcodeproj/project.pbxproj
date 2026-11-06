@@ -21,6 +21,7 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A4F0A7AFF883F096CF197BA7 /* DshLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF00B2DD58D257D58F7566D2 /* DshLiveActivityWidget.swift */; };
+		A5F7CC02209D335435C69098 /* LocalEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C71C69A4F5990DC84E1DF290 /* LocalEngine.swift */; };
 		BC7B9E0BC4CA07EB80759ECA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8ABE403A316BD170F4A03494 /* Foundation.framework */; };
 		D5480000000000000000A001 /* DshPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000A002 /* DshPlugin.swift */; };
 		D5480000000000000000A003 /* VoiceChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5480000000000000000A004 /* VoiceChannel.swift */; };
@@ -105,6 +106,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BF00B2DD58D257D58F7566D2 /* DshLiveActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DshLiveActivityWidget.swift; sourceTree = "<group>"; };
+		C71C69A4F5990DC84E1DF290 /* LocalEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalEngine.swift; sourceTree = "<group>"; };
 		D5480000000000000000A002 /* DshPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DshPlugin.swift; sourceTree = "<group>"; };
 		D5480000000000000000A004 /* VoiceChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceChannel.swift; sourceTree = "<group>"; };
 		D5480000000000000000A007 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
@@ -226,6 +228,7 @@
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				FE3F397FE3313A025CD8F78E /* LiveActivityBridge.swift */,
 				49E047F3D7E03586BDCDC3F4 /* UsageChannel.swift */,
+				C71C69A4F5990DC84E1DF290 /* LocalEngine.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -467,6 +470,7 @@
 				8390570FABDAB539299E9C56 /* DshActivityAttributes.swift in Sources */,
 				F9008C7EE57D2B964C928D8A /* LiveActivityBridge.swift in Sources */,
 				7134531779C36EBC735B9074 /* UsageChannel.swift in Sources */,
+				A5F7CC02209D335435C69098 /* LocalEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
