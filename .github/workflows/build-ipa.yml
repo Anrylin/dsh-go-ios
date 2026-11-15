@@ -18,7 +18,7 @@ on:
         default: '3.47.7'
 
 permissions:
-  contents: write
+  contents: read
 
 # Two dispatches in a row used to cancel the waiting one after ~15 minutes in
 # the queue, which read as "the build failed" with no runner and no log. A queued
@@ -112,16 +112,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish a release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # 不发 Release：每次 push 自动建 Release 会一直堆垃圾（之前堆了 21 个）。
+      # 产物只留在这次运行的 artifacts 里，要正式发版就手动上传。
+      - name: Summary
         run: |
-          set -euo pipefail
-          tag="ipa-$(date -u +%Y%m%d-%H%M%S)"
-          gh release create "$tag" \
-            --title "DSH Go iOS unsigned $tag" \
-            --notes "Unsigned build from ${GITHUB_SHA}. Sign with your own Apple ID before installing.
-
-          SHA256: \`$(cut -d' ' -f1 dsh-go-ios-unsigned.ipa.sha256)\`" \
-            dsh-go-ios-unsigned.ipa dsh-go-ios-unsigned.ipa.sha256
+          {
+            echo "### Unsigned IPA built"
+            echo ""
+            echo '```'
+            cat dsh-go-ios-unsigned.ipa.sha256
+            echo '```'
+            echo ""
+            echo "下载：本页底部 Artifacts › dsh-go-ios-unsigned。"
+            echo "要发版请手动上传，别再让 CI 建 Release。"
+          } >> "$GITHUB_STEP_SUMMARY"
