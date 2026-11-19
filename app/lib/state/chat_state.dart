@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:dsh_client/dsh_client.dart';
@@ -6,14 +7,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/l10n.dart';
 import '../usage/usage_stats.dart';
+import 'account_state.dart';
 import 'attachments.dart';
 import 'chat_error_text.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'models_state.dart';
 import 'notify_state.dart' show appForegroundProvider;
+import 'pending_send_store.dart';
 import 'run_pulse.dart';
 import 'sessions_state.dart';
+import 'transcript_cache.dart';
+
+/// Local engine windows are not tied to a DSH account; give them a stable key
+/// so the durable stores never see an empty owner field.
+const localChatOwner = 'local';
 
 /// How a message sent while a turn is running reaches the agent.
 enum SendMode {
@@ -470,6 +478,20 @@ class ChatController extends Notifier<ChatState> {
   /// sending the same content again reuses its request id, which DSH dedups.
   ({String content, String requestId})? _unsettled;
 
+  /// Host key the cached window was read for, so a build does not read twice.
+  String? _seedKey;
+
+  /// Sequence the cached window on disk ends at: nothing older is written over it.
+  int? _cachedSeq;
+
+  /// Pending sends written to disk, with the exact key they were stored under.
+  final _outboxKeys = <String, PendingSendKey>{};
+
+  /// Restart entries retried by hand must keep their persisted request id.
+  final _restartIds = <String>{};
+  Object? _replayOwner;
+  bool _replayHandedOff = false;
+
   /// Device minus Host clock; null until a live event was seen (and always
   /// null on the on-device engine, which shares the clock).
   Duration? _skew;
@@ -519,6 +541,15 @@ class ChatController extends Notifier<ChatState> {
     // rebuild may reuse this Notifier for an identically named session there.
     // Reconnecting to the same Host keeps the existing conversation consent.
     final host = ref.watch(activeHostProvider);
+    ref.listen(accountProvider.select((s) => s.profile?.id), (previous, next) {
+      if (previous != null && previous != next) {
+        _outboxKeys.clear();
+        _restartIds.clear();
+        _replayHandedOff = false;
+        _replayOwner = null;
+        ref.read(pendingSendOutboxProvider.future).then((box) => box.clearAccount(previous)).ignore();
+      }
+    });
     if (_approvalHost != host) {
       // These requests belong to the previous Host, even if the new Host has
       // the same session id. A new watch replays its own mux's pending requests.
@@ -527,6 +558,8 @@ class ChatController extends Notifier<ChatState> {
         _transcript.apply(HostRequestCancelledEvent(id));
       }
       _approvalHost = host;
+      _replayHandedOff = false;
+      _replayOwner = null;
       _defaultModelSaveFailed = false;
       _approvalScope = Object();
       _autoApprove = false;
@@ -573,6 +606,9 @@ class ChatController extends Notifier<ChatState> {
       unawaited(_sub?.cancel());
       unawaited(_states?.cancel());
     });
+    // The conversation paints from the last visible window at once; the first
+    // snapshot then replaces it, so this never shows a stale log.
+    _seedFromCache();
     // Not connected is a screen state (the composer explains it), not an
     // error. What was loaded stays until a new snapshot replaces it.
     if (client == null) return _retained(loading: false);
@@ -656,6 +692,116 @@ class ChatController extends Notifier<ChatState> {
     autoAnswered: _autoAnswered,
     clockSkew: _skew ?? Duration.zero,
   );
+
+  /// Host key shared by the cache path and the entry: a display-name change
+  /// must not lose the window.
+  static String _cacheHostId(HostRef host) => '${host.kind.name}:${host.id}';
+
+  /// Seeds the loaded transcript with the cached window for this session, once
+  /// per Host; a snapshot arriving meanwhile wins.
+  void _seedFromCache() {
+    final host = ref.read(activeHostProvider);
+    final key = _cacheHostId(host);
+    if (_seedKey == key) return;
+    _seedKey = key;
+    final owner = ref;
+    owner
+        .read(transcriptCacheProvider.future)
+        .then(
+          (cache) => cache.load(
+            hostId: key,
+            sessionId: sessionId,
+            account: owner.read(accountProvider).profile?.id ?? localChatOwner,
+          ),
+        )
+        .then((window) {
+          if (!owner.mounted || _seedKey != key) return;
+          if (owner.read(activeHostProvider) != host) return;
+          // Only a transcript that has not seen a snapshot can be seeded.
+          if (_synchronized || _transcript.cursor >= 0 || _transcript.items.isNotEmpty) return;
+          if (window == null) return;
+          _transcript.seedItems(window.items, title: window.title);
+          _cachedSeq = window.cursor;
+          state = _retained(loading: false);
+        })
+        .ignore();
+  }
+
+  /// Writes the visible window once a turn settles, so a restart or a switch
+  /// back paints it. A snapshot whose cursor moved backwards never overwrites
+  /// the newer window already on disk.
+  void _saveToCache() {
+    final cursor = _transcript.cursor;
+    if (cursor < 0) return;
+    final cached = _cachedSeq;
+    if (cached != null && cursor <= cached) return;
+    final items = _transcript.items;
+    if (items.isEmpty) return;
+    final host = ref.read(activeHostProvider);
+    final window = CachedTranscript(
+      account: ref.read(accountProvider).profile?.id ?? localChatOwner,
+      hostId: _cacheHostId(host),
+      sessionId: sessionId,
+      cursor: cursor,
+      title: _transcript.title,
+      hasMoreHistory: _transcript.hasMoreHistory,
+      items: items,
+    );
+    _cachedSeq = cursor;
+    ref.read(transcriptCacheProvider.future).then((cache) => cache.save(window)).ignore();
+  }
+
+  PendingSendKey _pendingKey() => PendingSendKey(
+    account: ref.read(accountProvider).profile?.id ?? localChatOwner,
+    host: _cacheHostId(ref.read(activeHostProvider)),
+    session: sessionId,
+  );
+
+  /// Settle a stored send: the Host has accepted it, or the person withdrew it.
+  /// The exact key is captured on enqueue so a Host switch cannot orphan it.
+  void _forgetOutbox(Iterable<String> ids) {
+    final byKey = <PendingSendKey, List<String>>{};
+    for (final id in ids) {
+      final key = _outboxKeys.remove(id);
+      _restartIds.remove(id);
+      if (key != null) (byKey[key] ??= []).add(id);
+    }
+    if (byKey.isEmpty) return;
+    ref
+        .read(pendingSendOutboxProvider.future)
+        .then((outbox) => Future.wait([
+          for (final entry in byKey.entries)
+            for (final id in entry.value) outbox.remove(entry.key, id),
+        ]))
+        .ignore();
+  }
+
+  /// Writes the draft before any RPC goes out. A replay already has a durable
+  /// entry; it only needs its key tracked locally again after a restart.
+  Future<String?> _enqueuePending(
+    String requestId,
+    String text,
+    List<DraftAttachment> attachments, {
+    required bool replay,
+  }) async {
+    final key = _pendingKey();
+    if (replay) {
+      _outboxKeys[requestId] = key;
+      return null;
+    }
+    final outbox = await ref.read(pendingSendOutboxProvider.future);
+    final dropped = await outbox.add(
+      key,
+      PendingSend(requestId: requestId, text: text, createdAt: DateTime.now()),
+      attachments,
+    );
+    _outboxKeys[requestId] = key;
+    if (dropped != null) {
+      _outboxKeys.remove(dropped.requestId);
+      return appL10n.chatPendingSendDropped(outbox.maxPerSession);
+    }
+    return null;
+  }
 
   void _markSyncing({SessionFollowEpoch? epoch, bool building = false}) {
     _followEpoch?.retire();
@@ -742,6 +888,11 @@ class ChatController extends Notifier<ChatState> {
     if (!_syncReady.isCompleted) _syncReady.complete(false);
     _syncReady = Completer<bool>();
     _markSyncing(building: building);
+    final scope = _syncScope;
+    if (!identical(_replayOwner, listener) && !_replayHandedOff) {
+      _replayOwner = listener;
+      unawaited(_replayOutbox(client, listener, scope));
+    }
     unawaited(_sub?.cancel());
     _sub = client
         .watch(
@@ -896,6 +1047,7 @@ class ChatController extends Notifier<ChatState> {
           } else {
             _claimedAt[entry.key] = event.seq;
           }
+          _forgetOutbox([entry.key]);
         } else {
           positions[entry.key] = (
             target: event.target,
@@ -922,6 +1074,7 @@ class ChatController extends Notifier<ChatState> {
       settled.add(id);
       return true;
     });
+    _forgetOutbox(settled);
     if (recover) {
       _withdrawn.removeAll(settled);
       _pending = List.unmodifiable([
@@ -1147,6 +1300,7 @@ class ChatController extends Notifier<ChatState> {
       goal: _transcript.goal,
       clockSkew: _skew ?? Duration.zero,
     );
+    if (!running) _saveToCache();
   }
 
   /// Our pending prompts with their inbox slot, plus prompts waiting in the
@@ -1200,8 +1354,10 @@ class ChatController extends Notifier<ChatState> {
   /// Removes optimistic bubbles whose `user/message` has landed.
   void _dropEchoed(List<ChatItem> items) {
     final echoed = <String>{};
-    // Echoes are near the end; a bounded scan keeps this O(1) per frame.
-    for (var i = items.length - 1, seen = 0; i >= 0 && seen < 12; i--) {
+    // Echoes are near the end; a bounded scan keeps this O(1) per frame. The
+    // bound must be above the number of prompts one Host batch can echo (13 in
+    // the worst observed case), or an older one would stay pending forever.
+    for (var i = items.length - 1, seen = 0; i >= 0 && seen < 64; i--) {
       final item = items[i];
       if (item is UserChatItem) {
         seen++;
@@ -1209,8 +1365,92 @@ class ChatController extends Notifier<ChatState> {
       }
     }
     if (echoed.isEmpty) return;
+    _forgetOutbox(echoed);
     final rest = _pending.where((p) => !echoed.contains(p.requestId)).toList();
     if (rest.length != _pending.length) _pending = List.unmodifiable(rest);
+  }
+
+  /// One replay per controller lifetime: a restart loads the durable queue and
+  /// resubmits oldest first with the stored request ids (DSH dedups them). A
+  /// reconnect inside this run never replays: the original send is still live.
+  Future<void> _replayOutbox(DshClient client, Object listener, Object scope) async {
+    final owner = ref;
+    final key = _pendingKey();
+    final PendingOutbox outbox;
+    final List<PendingSend> entries;
+    try {
+      outbox = await owner.read(pendingSendOutboxProvider.future);
+      entries = await outbox.store.load(key);
+    } catch (e) {
+      // No error log on this build: the outbox is best-effort and this path
+      // must never block the chat.
+      return;
+    }
+    if (entries.isEmpty || !owner.mounted) return;
+    bool current() =>
+        owner.mounted && identical(listener, _listenOwner) && identical(scope, _syncScope) && identical(client, _client);
+    final ready = await _syncReady.future.timeout(const Duration(seconds: 10), onTimeout: () => false);
+    if (!current()) return;
+    if (!ready || !_canControl) {
+      await _surfaceRestarted(entries, outbox);
+      return;
+    }
+    for (final entry in entries) {
+      if (!current() || !_canControl) return;
+      _outboxKeys[entry.requestId] = key;
+      try {
+        final attachments = await outbox.attachmentsFor(entry);
+        if (!current()) return;
+        _replayHandedOff = true;
+        if (!await send(
+          entry.text,
+          attachments: attachments,
+          // A replayed prompt was queued by an earlier session; never turn it
+          // into an interjection of whatever turn runs now.
+          mode: SendMode.queue,
+          verbatim: true,
+          replayRequestId: entry.requestId,
+        )) {
+          if (current()) await _surfaceRestarted([entry], outbox);
+          return;
+        }
+    } catch (e) {
+        if (current()) await _surfaceRestarted([entry], outbox);
+        return;
+      }
+    }
+  }
+
+  /// No follow to replay into (yet): keep the entry on disk and show its draft
+  /// as a retryable bubble, so a person is never left with an invisible send.
+  Future<void> _surfaceRestarted(Iterable<PendingSend> entries, PendingOutbox outbox) async {
+    final seen = {for (final pending in _pending) pending.requestId};
+    final echoed = _transcript.items.whereType<UserChatItem>().map((item) => item.requestId).toSet();
+    final added = <PendingPrompt>[];
+    for (final entry in entries) {
+      if (seen.contains(entry.requestId) || echoed.contains(entry.requestId)) continue;
+      final List<DraftAttachment> attachments;
+      try {
+        attachments = await outbox.attachmentsFor(entry);
+    } catch (e) {
+        // The draft bytes are gone: the entry cannot be re-sent from here.
+        continue;
+      }
+      added.add(
+        PendingPrompt(
+          requestId: entry.requestId,
+          text: entry.text,
+          time: entry.createdAt,
+          attachments: List.unmodifiable(attachments),
+          failureSeq: 0,
+        ),
+      );
+      _outboxKeys[entry.requestId] = _pendingKey();
+      _restartIds.add(entry.requestId);
+    }
+    if (added.isEmpty || !ref.mounted) return;
+    _pending = List.unmodifiable([..._pending, ...added]);
+    state = state.copyWith(pending: _placePending(), notice: appL10n.chatRetryingAfterRestart);
   }
 
   /// Sends [text] with [attachments]; resolves to `false` when it could not be
@@ -1218,19 +1458,41 @@ class ChatController extends Notifier<ChatState> {
   /// `/api/session/uploadFileBinary`, else `fileUploads/upload`); images go
   /// inline.
   ///
+  /// inline.
+  ///
   /// While a turn runs, [mode] picks how the message reaches the agent; when
   /// idle every mode just starts a turn.
-  Future<bool> send(String text, {List<DraftAttachment> attachments = const [], SendMode mode = SendMode.now}) async {
+  ///
+  /// [verbatim] sends [text] exactly as given (trimmed only to decide it is
+  /// empty): the pending bubble, the retry key and the prompt all carry it.
+  /// [beforeDeliver] runs once this send has chosen its request id (a retry of
+  /// an unsettled send keeps the old one) and before anything goes out, for a
+  /// side channel keyed by that id (伙伴小屋's context). Its failure fails the
+  /// send like any other; false drops the send quietly.
+  ///
+  /// [replayRequestId] is the restart path only: the durable entry already
+  /// carries the id DSH deduplicates, so no new one may be minted here.
+  Future<bool> send(
+    String text, {
+    List<DraftAttachment> attachments = const [],
+    SendMode mode = SendMode.now,
+    bool verbatim = false,
+    Future<bool> Function(String requestId)? beforeDeliver,
+    bool Function()? deliveryAllowed,
+    String? replayRequestId,
+  }) async {
     final client = _client;
     final trimmed = text.trim();
     if (client == null || (trimmed.isEmpty && attachments.isEmpty)) {
       return false;
     }
+    final body = verbatim ? text : trimmed;
     if (!_canControl && (mode == SendMode.interrupt || !await waitForSync())) return false;
     if (!ref.mounted || !identical(client, _client) || !_canControl) return false;
     final operation = _ChatOperation(ref, client, _syncScope);
-    final content = _contentKey(trimmed, attachments);
-    final requestId = _unsettled?.content == content ? _unsettled!.requestId : _requestId();
+    final content = _contentKey(body, attachments);
+    final retrying = _unsettled?.content == content;
+    final requestId = replayRequestId ?? (retrying ? _unsettled!.requestId : _requestId());
     _unsettled = null;
     final running = state.running;
     final effective = running ? (mode == SendMode.now ? SendMode.steer : mode) : SendMode.now;
@@ -1238,19 +1500,36 @@ class ChatController extends Notifier<ChatState> {
       ..._pending,
       PendingPrompt(
         requestId: requestId,
-        text: trimmed,
+        text: body,
         time: DateTime.now(),
         mode: effective,
         attachments: List.unmodifiable(attachments),
       ),
     ]);
+    // A retried request can already be in the log; the Host will not echo it twice.
+    if (retrying) _dropEchoed(_transcript.items);
     state = state.copyWith(
       pending: _placePending(),
       // A lost stream keeps saying so.
       clearError: !state.streamLost,
       clearNotice: true,
     );
+    String? enqueueNotice;
     try {
+      if (beforeDeliver != null) {
+        final go = await beforeDeliver(requestId);
+        if (!_currentOperation(operation)) return false;
+        if (!go) {
+          // The caller let it go (伙伴小屋 left this conversation meanwhile):
+          // nothing went out, so nothing waits and nothing failed.
+          _forgetOutbox([requestId]);
+          _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
+          state = state.copyWith(pending: _placePending());
+          return false;
+        }
+      }
+      enqueueNotice = await _enqueuePending(requestId, body, attachments, replay: replayRequestId != null);
+      if (!_currentOperation(operation)) return false;
       final receipts = await _stageFiles(operation, attachments);
       if (!_currentOperation(operation)) return false;
       var promptMode = effective == SendMode.steer ? PromptMode.steer : PromptMode.queue;
@@ -1272,10 +1551,18 @@ class ChatController extends Notifier<ChatState> {
           state = state.copyWith(pending: _placePending());
         }
       }
-      final notice = await _deliver(operation, trimmed, attachments, receipts, requestId: requestId, mode: promptMode);
+      final notice = await _deliver(
+        operation,
+        body,
+        attachments,
+        receipts,
+        requestId: requestId,
+        mode: promptMode,
+        deliveryAllowed: deliveryAllowed,
+      );
       _sent();
       if (!_currentOperation(operation)) return false;
-      state = state.copyWith(error: stopFailed, notice: notice);
+      state = state.copyWith(error: stopFailed, notice: notice ?? enqueueNotice);
       return true;
     } catch (e) {
       if (!_currentOperation(operation)) return false;
@@ -1291,9 +1578,14 @@ class ChatController extends Notifier<ChatState> {
       }
       if (_outcomeUnknown(e)) {
         _unsettled = (content: content, requestId: requestId);
+      } else {
+        // A definite refusal (model/route changed, upload rejected, connection
+        // retired) means the durable entry can never be delivered by a later
+        // replay: drop it, or it would send itself on the next sync.
+        _forgetOutbox([requestId]);
       }
       _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
-      state = state.copyWith(pending: _placePending(), error: _sendFailure(e));
+      state = state.copyWith(pending: _placePending(), error: _sendFailure(e), notice: enqueueNotice);
       return false;
     }
   }
@@ -1321,7 +1613,17 @@ class ChatController extends Notifier<ChatState> {
         for (final p in _pending) p.requestId == current.requestId ? p.failedAt(p.failureSeq!, editedText: edited) : p,
       ]);
       state = state.copyWith(pending: _placePending());
-      final ok = await send(edited, attachments: current.attachments);
+      // A durable restart entry keeps its id only when the text is untouched:
+      // DSH dedups by requestId, so reusing it for an edit would drop the edit.
+      // An edited draft is a new submission, and its old durable copy must go.
+      final replayId =
+          _restartIds.contains(current.requestId) && edited == current.text ? current.requestId : null;
+      if (replayId == null) _forgetOutbox([current.requestId]);
+      final ok = await send(
+        edited,
+        attachments: current.attachments,
+        replayRequestId: replayId,
+      );
       if (!_currentOperation(operation)) return false;
       if (ok) {
         _pending = List.unmodifiable(_pending.where((p) => p.requestId != current.requestId));
@@ -1340,8 +1642,13 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// What a send is matched on when it is tried again ([_unsettled]).
-  static String _contentKey(String text, List<DraftAttachment> attachments) =>
-      [text, for (final a in attachments) a.name].join('\n');
+  /// A draft's identity is its id, not its name: replacing a same-named photo
+  /// or file is a new submission, while re-sending the same picks keeps the
+  /// request id so an unknown outcome is never posted twice.
+  static String _contentKey(String text, List<DraftAttachment> attachments) => jsonEncode([
+    text,
+    [for (final a in attachments) a.id],
+  ]);
 
   /// Stages the files among [attachments] (`DshClient.uploadFile` prefers the
   /// Host's raw-byte route and falls back to `fileUploads/upload`); images go
@@ -1383,6 +1690,7 @@ class ChatController extends Notifier<ChatState> {
     List<String> receipts, {
     required String requestId,
     required PromptMode mode,
+    bool Function()? deliveryAllowed,
   }) async {
     final client = operation.client;
     final images = [
@@ -1391,7 +1699,10 @@ class ChatController extends Notifier<ChatState> {
     ];
     Future<void> prompt(List<PromptImage> images, List<String> receipts) {
       _requireCurrent(operation);
-      return client.prompt(
+      if (deliveryAllowed != null && !deliveryAllowed()) {
+        throw const DshClosedException('Prepared phone route source changed');
+      }
+      final handoff = client.prompt(
         sessionId,
         text,
         images: images,
@@ -1401,6 +1712,10 @@ class ChatController extends Notifier<ChatState> {
         // No clientTimeZone: DSH needs an IANA name, which Dart can't provide; the
         // local process already runs with TZ set from the device (RuntimeController).
       );
+      // The durable entry is being removed; a stream drop in this same
+      // controller must not replay a prompt we already handed to this Host.
+      _replayHandedOff = true;
+      return handoff;
     }
 
     try {
@@ -1599,6 +1914,7 @@ class ChatController extends Notifier<ChatState> {
     if (!_currentOperation(operation)) return const [];
     if (failure != null) {
       final gone = {for (final p in lost) p.requestId};
+      _forgetOutbox(gone);
       _pending = List.unmodifiable(_pending.where((p) => !gone.contains(p.requestId)));
       state = state.copyWith(error: _sendFailure(failure));
     }
@@ -1653,6 +1969,7 @@ class ChatController extends Notifier<ChatState> {
       return false;
     }
     if (!_currentOperation(operation)) return false;
+    _forgetOutbox([prompt.requestId]);
     _pending = List.unmodifiable(_pending.where((p) => p.requestId != prompt.requestId));
     _publish();
     return true;

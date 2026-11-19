@@ -268,6 +268,7 @@ class RemoteAccount {
     this.peerConnector,
     this.preferredTransports,
     this.onDirectFallback,
+    this.directHeadStart = const Duration(seconds: 6),
     this.directTimeout = const Duration(seconds: 8),
     this.iceServersTimeout = const Duration(seconds: 10),
   }) : serverUrl = normalizeServerUrl(serverUrl ?? defaultRemoteServer),
@@ -303,7 +304,19 @@ class RemoteAccount {
 
   /// How long a direct attempt may take to open its DataChannel before the
   /// next path is tried (the Server's larger deadline is capped at 15 s).
+  /// [directHeadStart] is the effective upper bound whenever it is shorter.
   final Duration directTimeout;
+
+  /// Budget for each direct stage (LAN/P2P, then TURN) before the Relay
+  /// takes over. The Server keeps one Control socket per device and evicts
+  /// an older one, so the direct attempt cannot run next to a Relay attach;
+  /// bounding it keeps a stalled ICE negotiation at the head start instead of
+  /// two full [directTimeout] windows.
+  ///
+  /// Six seconds by default: a LAN handshake is usually well under one, but a
+  /// slow phone/AP pair still has to open inside this window or every connect
+  /// would fall to the Relay and cool direct down for 45 s.
+  final Duration directHeadStart;
 
   /// Budget for each connection's fresh STUN/TURN credential request,
   /// separate from the DataChannel negotiation deadline.
@@ -324,6 +337,9 @@ class RemoteAccount {
   final Map<String, DateTime> _directCooldown = {};
   final Map<String, DateTime> _turnCooldown = {};
   final Map<String, String> _networkHints = {};
+  /// Data plane that last carried a full session, per Host. A Relay here skips
+  /// the direct lane on the next connect; one failed connect clears it.
+  final Map<String, RemoteTransportMode> _lastGoodTransport = {};
   final StreamController<RemoteConnectionState> _connectionStates = StreamController.broadcast();
 
   String get _identityKey => 'dsh_remote.v1.$_scope.identity';
@@ -839,8 +855,10 @@ class RemoteAccount {
     try {
       return await _openHostSessionOnce(host, previous, confirm);
     } on RemoteConnectException {
+      _lastGoodTransport.remove(host.id);
       rethrow;
     } on Object catch (error) {
+      _lastGoodTransport.remove(host.id);
       throw _asConnectException(error);
     }
   }
@@ -907,6 +925,8 @@ class RemoteAccount {
     unawaited(
       rpc.done.then((reason) {
         if (!reason.retryable || reason.code == 'CLIENT_CLOSED') return;
+        // The remembered plane just failed: let the direct lane race again.
+        _lastGoodTransport.remove(host.id);
         final until = DateTime.now().add(const Duration(seconds: 45));
         switch (transport is WebRtcTransport ? transport.actualMode ?? transport.mode : transport.mode) {
           case RemoteTransportMode.lan || RemoteTransportMode.p2p:
@@ -957,6 +977,9 @@ class RemoteAccount {
           ),
         );
       }
+      // This plane carried a full session; the next connect starts from it.
+      // (Compact-history negotiation is not part of this client's protocol.)
+      _lastGoodTransport[host.id] = transport is WebRtcTransport ? transport.mode : RemoteTransportMode.relay;
       setup.stop();
       RemoteNetworkDiagnostics snapshot() => RemoteNetworkDiagnostics(
         transportMode: transport is WebRtcTransport ? transport.actualMode : transport.mode,
@@ -1008,6 +1031,13 @@ class RemoteAccount {
   /// the Host may still hold state for the old one. Noise always starts only
   /// after the final data plane is chosen. Recent failures skip the bad path
   /// for 45 seconds; a changed native network hint clears that cooldown.
+  ///
+  /// Each direct stage is bounded by [directHeadStart] rather than the larger
+  /// [directTimeout]: a direct path that opens inside that window wins, while
+  /// a stalled ICE negotiation hands over to the Relay instead of waiting two
+  /// full stage timeouts. The winning plane is remembered per Host, so a
+  /// session that needed the Relay goes straight to the Relay next time until a
+  /// connect fails or the network hint changes.
   Future<_TransportSelection> _connectTransport(String token, String hostId) async {
     final connector = peerConnector;
     if (connector == null) {
@@ -1027,32 +1057,43 @@ class RemoteAccount {
     if (oldHint != null && oldHint != hintKey) {
       _directCooldown.remove(hostId);
       _turnCooldown.remove(hostId);
+      _lastGoodTransport.remove(hostId);
     }
     final now = DateTime.now();
     final skipDirect = _directCooldown[hostId]?.isAfter(now) ?? false;
     final skipTurn = _turnCooldown[hostId]?.isAfter(now) ?? false;
-    RemoteNetworkFallbackReason? reason = skipDirect ? RemoteNetworkFallbackReason.directRecentlyFailed : null;
-    var wantDirect = !skipDirect && preferred.any((p) => p == RemoteTransportMode.lan || p == RemoteTransportMode.p2p);
-    var wantTurn = !skipTurn && preferred.contains(RemoteTransportMode.turn);
+    var reason = skipDirect ? RemoteNetworkFallbackReason.directRecentlyFailed : null;
+    final wantDirect = !skipDirect && preferred.any((p) => p == RemoteTransportMode.lan || p == RemoteTransportMode.p2p);
+    final wantTurn = !skipTurn && preferred.contains(RemoteTransportMode.turn);
     // Credentials belong to a connectionId. A failed direct-stage lookup
     // must not suppress a fresh lookup on the separately authorized TURN stage.
     Future<List<RemoteIceServer>> fetchIce(String id) => api.turnCredentials(token, id);
+    // A shorter direct attempt wins over the larger default: the Relay behind
+    // it is fast, while a long ICE wait is what makes a launch feel slow.
+    final budget = directHeadStart < directTimeout ? directHeadStart : directTimeout;
 
-    if (!wantDirect && !wantTurn) return _TransportSelection(await _connectRelay(token, hostId), reason);
+    if ((!wantDirect && !wantTurn) || _lastGoodTransport[hostId] == RemoteTransportMode.relay) {
+      // Nothing direct is worth trying, or the Relay carried the last session.
+      return _TransportSelection(await _connectRelay(token, hostId), reason);
+    }
     var control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
     if (control.directTransports.isEmpty) {
       return _TransportSelection(control, RemoteNetworkFallbackReason.webrtcUnavailable);
     }
-    wantDirect = wantDirect && control.directTransports.any((p) => p == 'lan' || p == 'p2p');
-    wantTurn = wantTurn && control.directTransports.contains('turn');
+    final planDirect = wantDirect && control.directTransports.any((p) => p == 'lan' || p == 'p2p');
+    final planTurn = wantTurn && control.directTransports.contains('turn');
+    if (!planDirect && !planTurn) {
+      await control.close();
+      return _TransportSelection(await _connectRelay(token, hostId), reason);
+    }
     var directFailed = false;
-    if (wantDirect) {
+    if (planDirect) {
       try {
         final rtc = await WebRtcTransport.negotiate(
           control: control,
           connector: connector,
           iceServers: fetchIce,
-          timeout: directTimeout,
+          timeout: budget,
           iceServersTimeout: iceServersTimeout,
         );
         return _TransportSelection(rtc, reason);
@@ -1062,15 +1103,15 @@ class RemoteAccount {
         _directCooldown[hostId] = DateTime.now().add(const Duration(seconds: 45));
         _notifyFallback(reason);
       }
-      if (wantTurn) control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
+      if (planTurn) control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
     }
-    if (wantTurn) {
+    if (planTurn) {
       try {
         final rtc = await WebRtcTransport.negotiate(
           control: control,
           connector: connector,
           iceServers: fetchIce,
-          timeout: directTimeout,
+          timeout: budget,
           iceServersTimeout: iceServersTimeout,
           relayOnly: true,
         );
@@ -1087,8 +1128,6 @@ class RemoteAccount {
           _notifyFallback(reason);
         }
       }
-    } else if (!wantDirect) {
-      await control.close();
     }
     return _TransportSelection(await _connectRelay(token, hostId), reason);
   }

@@ -24,7 +24,9 @@ import '../runtime/runtime_bridge.dart';
 import '../runtime/runtime_state.dart';
 import 'account_api.dart';
 import 'connection_state.dart';
+import 'pending_send_store.dart';
 import 'read_list_epoch.dart';
+import 'transcript_cache.dart';
 
 export 'account_api.dart';
 
@@ -417,8 +419,22 @@ class AccountController extends Notifier<AccountState> {
     final api = _api;
     final generation = _apiGeneration;
     if (api == null || !_scopeCurrent(api, generation)) throw StateError(appL10n.stateEngineDisconnected);
+    final accountId = state.profile?.id;
     ref.read(readListCredentialEpochProvider.notifier).advance();
     _onView(await api.signOut(), api, generation);
+    // The cached conversations belong to the account that just left. Other
+    // accounts on this device keep their windows.
+    if (accountId != null) {
+      ref
+          .read(transcriptCacheProvider.future)
+          .then((cache) => cache.clearAccount(accountId))
+          .ignore();
+      // No chat controller may be alive here: clear the durable send drafts too.
+      ref
+          .read(pendingSendOutboxProvider.future)
+          .then((outbox) => outbox.clearAccount(accountId))
+          .ignore();
+    }
   }
 
   /// Whether agents are mid-task on the account route; null when unknown.

@@ -3427,6 +3427,14 @@ class L10nEn extends L10n {
   String get chatSending => 'Sending';
 
   @override
+  String get chatRetryingAfterRestart => 'Sending again after restart';
+
+  @override
+  String chatPendingSendDropped(int count) {
+    return 'The oldest queued message was dropped (at most $count kept per chat)';
+  }
+
+  @override
   String get chatSendNow => 'Send now';
 
   @override

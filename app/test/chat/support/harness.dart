@@ -11,6 +11,7 @@ import 'package:dsh_app/state/commands_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/features_state.dart' show agentPresetsProvider, permissionStateProvider;
 import 'package:dsh_app/state/models_state.dart';
+import 'package:dsh_app/state/pending_send_store.dart';
 import 'package:dsh_app/state/sessions_state.dart';
 import 'package:dsh_app/state/settings_state.dart';
 import 'package:dsh_app/state/usage_state.dart';
@@ -45,9 +46,77 @@ void usePhoneView(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
+/// Widget tests run in fake async: a native `RandomAccessFile.open()` never
+/// settles there, so chat lifecycle tests use this store and keep the same
+/// request-id idempotence without touching the filesystem.
+final class MemoryPendingSendStore extends PendingSendStore {
+  MemoryPendingSendStore() : super(directory: Directory.systemTemp);
+
+  final _byKey = <PendingSendKey, List<PendingSend>>{};
+
+  @override
+  Future<List<PendingSend>> load(PendingSendKey key) async =>
+      List.unmodifiable(_byKey[key] ?? const <PendingSend>[]);
+
+  @override
+  Future<PendingSend?> add(PendingSendKey key, PendingSend send) async {
+    final entries = _byKey.putIfAbsent(key, () => <PendingSend>[]);
+    final index = entries.indexWhere((e) => e.requestId == send.requestId);
+    if (index >= 0) {
+      entries[index] = send;
+      return null;
+    }
+    PendingSend? dropped;
+    if (entries.length >= maxPerSession) dropped = entries.removeAt(0);
+    entries.add(send);
+    return dropped;
+  }
+
+  @override
+  Future<void> remove(PendingSendKey key, String requestId) async {
+    _byKey[key]?.removeWhere((send) => send.requestId == requestId);
+  }
+
+  @override
+  Future<void> clearAccount(String account) async {
+    for (final key in _byKey.keys.where((key) => key.account == account).toList()) {
+      _byKey.remove(key);
+    }
+  }
+
+  @override
+  Future<void> updateAttempt(
+    PendingSendKey key,
+    String requestId, {
+    required String lastError,
+  }) async {
+    final entries = _byKey[key] ?? const <PendingSend>[];
+    final index = entries.indexWhere((send) => send.requestId == requestId);
+    if (index < 0) return;
+    final current = entries[index];
+    entries[index] = PendingSend(
+      requestId: current.requestId,
+      text: current.text,
+      createdAt: current.createdAt,
+      attachments: current.attachments,
+      attempts: current.attempts + 1,
+      lastError: lastError,
+    );
+  }
+}
+
+/// Override for containers built outside [testApp].
+Override memoryPendingOutboxOverride() => pendingSendOutboxProvider.overrideWith(
+  (ref) async => PendingOutbox.withStore(Directory.systemTemp, MemoryPendingSendStore()),
+);
+
 Widget testApp(Widget home, {Brightness brightness = Brightness.light, List<Override> overrides = const []}) {
   return ProviderScope(
-    overrides: [accountWalletBalanceProvider.overrideWithValue(null), ...overrides],
+    overrides: [
+      accountWalletBalanceProvider.overrideWithValue(null),
+      memoryPendingOutboxOverride(),
+      ...overrides,
+    ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: testTheme(Brightness.light),
@@ -139,6 +208,10 @@ class FakeChatController extends ChatController {
     String text, {
     List<DraftAttachment> attachments = const [],
     SendMode mode = SendMode.now,
+    bool verbatim = false,
+    String? replayRequestId,
+    Future<bool> Function(String requestId)? beforeDeliver,
+    bool Function()? deliveryAllowed,
   }) async {
     sent.add(text);
     sentAttachments.add(attachments);

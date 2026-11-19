@@ -18,6 +18,7 @@ import '../remote/ssh/ssh_host_config.dart';
 import '../remote/ssh/ssh_transport.dart';
 import 'sessions_state.dart';
 import 'read_list_epoch.dart';
+import 'transcript_cache.dart';
 
 export '../remote/link_status.dart' show HostLinkStatus, HostLinkPhase, HostLinkStep, HostLinkError, HostLinkErrorKind;
 export '../remote/ssh/ssh_transport.dart' show PresentedHostKey;
@@ -595,6 +596,9 @@ class RelayAccountController extends AsyncNotifier<RelayAccountState> {
     await backend.logout();
     if (!_isCurrent(epoch, backend)) return;
     unawaited(ref.read(activeHostProvider.notifier).forget((h) => h.kind == HostKind.relay));
+    // Relay windows are cached under the current local account, not the Relay
+    // user id; without that link this logout clears the cache conservatively.
+    ref.read(transcriptCacheProvider.future).then((cache) => cache.clearAll()).ignore();
     await _signedOut(epoch, backend);
   }
 

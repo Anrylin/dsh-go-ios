@@ -175,6 +175,10 @@ class ChatTranscript {
   ({GoalProjection? goal})? _goal;
   bool? _runningOverride;
 
+  /// Rows painted before the first snapshot ([seedItems]); a snapshot replaces
+  /// them, so they never mix with the Host's log.
+  List<ChatItem>? _seeded;
+
   SessionProjections projections = SessionProjections.empty;
   SessionHeader? header;
   String? _title;
@@ -310,11 +314,25 @@ class ChatTranscript {
     ];
   }
 
+  /// Shows a cached window until the first snapshot arrives: a chat list can
+  /// paint a conversation on a cold start before the Host answers.
+  ///
+  /// Does not move [cursor] or [hasMoreHistory]: those belong to the Host, and
+  /// older history is still loaded once a real snapshot opened the window.
+  void seedItems(List<ChatItem> items, {String? title}) {
+    if (items.isEmpty) return;
+    _seeded = items;
+    _durable = null;
+    _items = null;
+    if (_title == null && title != null) _title = title;
+  }
+
   /// Applies one event; returns `true` when [items] may have changed.
   bool apply(DshEvent event) {
     switch (event) {
       case SessionSnapshotEvent():
         if (!event.isResync) _log.clear();
+        _seeded = null;
         header = event.header;
         projections = event.projections;
         _inbox = projections.inbox;
@@ -419,6 +437,7 @@ class ChatTranscript {
 
   /// Merges an older page from `DshClient.history(beforeSeq: oldestSeq)`.
   void prependHistory(HistoryPage page) {
+    _seeded = null;
     for (final e in page.events) {
       _log[e.seq] = e;
     }
@@ -449,7 +468,9 @@ class ChatTranscript {
       }
     }
     _durableTail.clear();
-    return fold.build(_approvals.values);
+    final durable = fold.build(_approvals.values);
+    final seeded = _seeded;
+    return seeded == null ? durable : [...seeded, ...durable];
   }
 
   static NoticeChatItem? _turnNotice(int seq, TurnEndReason reason) => switch (reason.kind) {

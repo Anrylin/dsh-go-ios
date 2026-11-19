@@ -14,6 +14,15 @@
   "chatQueued": "排队中",
   "chatStoppingTurn": "正在停止本轮",
   "chatSending": "发送中",
+  "chatRetryingAfterRestart": "重启后继续发送",
+  "chatPendingSendDropped": "已丢弃最早的排队消息（每个对话最多保留 {count} 条）",
+  "@chatPendingSendDropped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chatSendNow": "立即发送",
   "chatSwitchToSteer": "改为插话",
   "chatWithdraw": "撤回",

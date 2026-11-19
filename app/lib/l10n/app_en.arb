@@ -992,6 +992,8 @@
   "chatQueued": "Queued",
   "chatStoppingTurn": "Stopping this turn",
   "chatSending": "Sending",
+  "chatRetryingAfterRestart": "Sending again after restart",
+  "chatPendingSendDropped": "The oldest queued message was dropped (at most {count} kept per chat)",
   "chatSendNow": "Send now",
   "chatSwitchToSteer": "Steer instead",
   "chatWithdraw": "Undo",

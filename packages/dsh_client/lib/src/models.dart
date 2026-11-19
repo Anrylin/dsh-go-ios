@@ -120,6 +120,17 @@ class ImageAttachment {
   final int? height;
   final String? name;
   final Map<String, Object?> raw;
+
+  /// The same shape [`ImageAttachment.fromJson`] reads, for the rolling
+  /// transcript cache: the cache stores these, never the image bytes.
+  Map<String, Object?> toJson() => {
+    'attachmentId': attachmentId,
+    'mediaType': mediaType,
+    'bytes': ?bytes,
+    'width': ?width,
+    'height': ?height,
+    'name': ?name,
+  };
 }
 
 class FileAttachment {

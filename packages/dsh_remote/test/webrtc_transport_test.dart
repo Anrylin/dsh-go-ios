@@ -446,6 +446,8 @@ void main() {
           },
         ];
       };
+      // The credential timeout is what this test measures, so keep the head
+      // start off the DataChannel deadline.
       final client = await connect();
       expect(await client.listSessions(), isEmpty);
       expect(server.turnRequests, hasLength(1));

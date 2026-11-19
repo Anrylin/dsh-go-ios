@@ -6044,6 +6044,18 @@ abstract class L10n {
   /// **'发送中'**
   String get chatSending;
 
+  /// No description provided for @chatRetryingAfterRestart.
+  ///
+  /// In zh, this message translates to:
+  /// **'重启后继续发送'**
+  String get chatRetryingAfterRestart;
+
+  /// No description provided for @chatPendingSendDropped.
+  ///
+  /// In zh, this message translates to:
+  /// **'已丢弃最早的排队消息（每个对话最多保留 {count} 条）'**
+  String chatPendingSendDropped(int count);
+
   /// No description provided for @chatSendNow.
   ///
   /// In zh, this message translates to:

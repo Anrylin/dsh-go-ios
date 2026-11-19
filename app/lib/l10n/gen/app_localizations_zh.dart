@@ -3266,6 +3266,14 @@ class L10nZh extends L10n {
   String get chatSending => '发送中';
 
   @override
+  String get chatRetryingAfterRestart => '重启后继续发送';
+
+  @override
+  String chatPendingSendDropped(int count) {
+    return '已丢弃最早的排队消息（每个对话最多保留 $count 条）';
+  }
+
+  @override
   String get chatSendNow => '立即发送';
 
   @override
