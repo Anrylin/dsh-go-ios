@@ -128,6 +128,7 @@ class PendingSendStore {
   /// an edit, and keeps its place in line.
   Future<PendingSend?> add(PendingSendKey key, PendingSend send) async {
     final entry = _entry(key, send);
+    if (send.text.length > _maxText) throw _tooLarge;
     if (!_validEntry(entry)) throw _invalid;
     return _transaction((doc) async {
       final entries = _entries(doc);

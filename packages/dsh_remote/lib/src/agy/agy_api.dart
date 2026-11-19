@@ -377,14 +377,7 @@ class AgyClient {
   }
 
   Future<void> prompt(String sessionId, String text, List<JsonMap> images) async {
-    final params = <String, Object?>{
-      'sessionId': sessionId,
-      'backend': agyBackend,
-      'prompt': <Object?>[
-        if (text.isNotEmpty) <String, Object?>{'type': 'text', 'text': text},
-        ...images,
-      ],
-    };
+    final params = agyPromptParams(sessionId, text, images);
     final encodedLength = utf8.encode(jsonEncode(params)).length;
     if (images.isNotEmpty || encodedLength > maxAcpPromptBytes) {
       await transport.transferCall('session/prompt', params, timeout: agyPromptTimeout);
@@ -397,20 +390,26 @@ class AgyClient {
     await transport.call('session/cancel', <String, Object?>{'sessionId': sessionId});
   }
 
+  /// Discovery failures are propagated, never reduced to an empty list, so
+  /// the virtual Harness can surface them in the catalog `failures`.
   Future<List<JsonMap>> listWorkspaces() async {
-    final result = await transport.call('dsh/workspaceList', <String, Object?>{'backend': agyBackend}).catchError(
-          (Object _) => <Object?>[],
-        );
+    final result = await transport.call('dsh/workspaceList', <String, Object?>{'backend': agyBackend});
     return agyList(result).map(agyMap).where((item) => agyString(item['path']) != null).toList();
   }
 
+  /// `dsh/sessionList({path: cwd})` is what writes the Host's trusted
+  /// session→cwd binding. No `cwd` key is sent: the strict schema rejects it.
   Future<List<JsonMap>> listSessions(String path, {int limit = 30}) async {
-    final result = await transport.call('dsh/sessionList', <String, Object?>{
-      'path': path,
-      'backend': agyBackend,
-      'limit': limit.clamp(1, 100),
-    }).catchError((Object _) => <String, Object?>{'items': <Object?>[]});
+    final result = await transport.call('dsh/sessionList', agyPrebindParams(path, limit: limit));
     return agyList(agyMap(result)['items']).map(agyMap).toList();
+  }
+
+  /// Prebinds [sessionId] to [cwd] on the Host before `dsh/selectModel` or
+  /// `session/prompt`. Those strict schemas reject `cwd`, so the trusted
+  /// directory must arrive through `dsh/sessionList` first.
+  Future<void> prebindSession(String sessionId, String cwd) async {
+    if (sessionId.isEmpty || cwd.isEmpty) return;
+    await listSessions(cwd, limit: 100);
   }
 
   Future<List<Object?>> history(String sessionId) async {
@@ -440,12 +439,7 @@ class AgyClient {
     if (!transport.capabilities.modelLoad) {
       await loadSession(sessionId);
     }
-    final params = <String, Object?>{
-      'sessionId': sessionId,
-      'backend': agyBackend,
-      'model': model,
-      if (selection['reasoningEffort'] != null) 'reasoningEffort': selection['reasoningEffort']!,
-    };
+    final params = agySelectModelParams(sessionId, model, agyString(selection['reasoningEffort']));
     final result = agyMap(await transport.call('dsh/selectModel', params));
     final selected = agyMap(result['selected']);
     if (agyString(selected['provider']) != agyBackend || agyString(selected['model']) == null) {

@@ -17,10 +17,12 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import 'agent_selection_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'notify_state.dart' show viewedChatProvider;
@@ -207,11 +209,15 @@ class DrawerSeen {
 class DrawerSeenController extends Notifier<DrawerSeen> {
   String _key = '';
 
-  static String keyFor(HostRef host) => 'drawer.seen.${host.kind.name}.${host.id}';
+  /// Conversation ids are an Agent's space, so the marks of one Agent must
+  /// never seed another's unread dots after a switch.
+  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) => host.kind == HostKind.relay
+      ? 'drawer.seen.${host.kind.name}.${host.id}.${agent.code}'
+      : 'drawer.seen.${host.kind.name}.${host.id}';
 
   @override
   DrawerSeen build() {
-    final key = keyFor(ref.watch(activeHostProvider));
+    final key = keyFor(ref.watch(activeHostProvider), agent: ref.watch(activeAgentProvider));
     _key = key;
     unawaited(_load(key));
     ref.listen(sessionsProvider, (_, _) {

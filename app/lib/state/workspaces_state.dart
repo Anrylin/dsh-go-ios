@@ -293,8 +293,9 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
   /// key: each Agent keeps its own selected workspace, pins and groups, so
   /// switching never shows a workspace the target Agent does not have (and
   /// switching back restores exactly what was there).
-  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) =>
-      'workspaces.${host.kind.name}.${host.id}.${agent.code}';
+  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) => host.kind == HostKind.relay
+      ? 'workspaces.${host.kind.name}.${host.id}.${agent.code}'
+      : 'workspaces.${host.kind.name}.${host.id}';
 
   @override
   WorkspacePrefs build() {

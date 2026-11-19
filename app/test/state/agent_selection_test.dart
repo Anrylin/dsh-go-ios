@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:dsh_app/state/agent_capabilities_state.dart';
 import 'package:dsh_app/state/agent_selection_state.dart';
+import 'package:dsh_app/state/hosts_state.dart' show ActiveHostController, HostRef, activeHostProvider;
 import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -153,4 +154,37 @@ void main() {
       }
     });
   });
+
+  group('activeAgentProvider', () {
+    test('a relay Host uses the stored Agent', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        agentSelectionPrefsKey: json.encode(<String, Object?>{
+          'default': 'CodeX',
+          'hosts': <String, Object?>{'h1': 'AGY'},
+        }),
+      });
+      final container = ProviderContainer(
+        overrides: [activeHostProvider.overrideWith(() => _FixedHost(HostRef.relay('h1')))],
+      );
+      addTearDown(container.dispose);
+      await container.read(agentSelectionProvider.notifier).ready();
+      expect(container.read(activeAgentProvider), RemoteAgent.agy);
+    });
+
+    test('local and SSH Hosts always use DSH', () {
+      for (final host in <HostRef>[HostRef.local, HostRef.ssh('h1')]) {
+        final container = ProviderContainer(overrides: [activeHostProvider.overrideWith(() => _FixedHost(host))]);
+        addTearDown(container.dispose);
+        expect(container.read(activeAgentProvider), RemoteAgent.dsh);
+      }
+    });
+  });
+}
+
+class _FixedHost extends ActiveHostController {
+  _FixedHost(this.host);
+  final HostRef host;
+
+  @override
+  HostRef build() => host;
 }

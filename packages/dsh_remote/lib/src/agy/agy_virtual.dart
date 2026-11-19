@@ -53,7 +53,37 @@ class AgyVirtualHarness implements AgyLiveContext {
   Future<AgyCatalog>? _catalogFuture;
   final Set<String> _hydrated = <String>{};
   final Map<String, Future<void>> _hydrating = <String, Future<void>>{};
+  final Set<String> _preboundSessions = <String>{};
+  final List<JsonMap> _failures = <JsonMap>[];
   int _lastProjectionSeq = 0;
+
+  /// Discovery/capability/prebind failures surfaced to the native UI instead
+  /// of an empty model list. Bounded so a flapping Host cannot grow forever.
+  List<JsonMap> get failures => List<JsonMap>.unmodifiable(_failures);
+
+  void _recordFailure(String phase, Object? error) {
+    final entry = error is Map<String, Object?>
+        ? <String, Object?>{...error, 'phase': phase}
+        : agyFailureEntry(error, phase: phase);
+    final duplicate = _failures.any((item) =>
+        item['code'] == entry['code'] && item['message'] == entry['message'] && item['phase'] == entry['phase']);
+    if (duplicate) return;
+    _failures.add(entry);
+    if (_failures.length > 20) _failures.removeAt(0);
+  }
+
+  void _clearFailures(String phase) => _failures.removeWhere((item) => item['phase'] == phase);
+
+  /// Merges the Host's own catalog failures with the discovery diagnostics
+  /// collected on this connection, de-duplicated by code/message/phase.
+  List<Object?> _catalogFailures(JsonMap projected) {
+    final seen = <String>{};
+    return <Object?>[...agyList(projected['failures']), ...failures].where((item) {
+      final entry = agyMap(item);
+      final key = '${agyString(entry['code'])}|${agyString(entry['message'])}|${agyString(entry['phase'])}';
+      return seen.add(key);
+    }).toList(growable: false);
+  }
 
   @override
   bool closed = false;
@@ -79,10 +109,17 @@ class AgyVirtualHarness implements AgyLiveContext {
     if (session == null || session.isClosed) {
       throw const ClientModeError('FEATURE_NOT_SUPPORTED', 'The remote Host exposes no supported Harness transport.');
     }
-    final capabilities =
-        explicitCapabilities ?? (await AgyCapabilities.probe(session.rpc)).requireConsistentSessionFormats();
+    final capabilities = explicitCapabilities ??
+        (await AgyCapabilities.probeWithRetry(session.rpc)).requireConsistentSessionFormats();
+    for (final diagnostic in capabilities.diagnostics) {
+      _recordFailure('capabilities', diagnostic);
+    }
     if (!capabilities.available) {
-      throw const ClientModeError('FEATURE_NOT_SUPPORTED', 'The remote Host exposes no supported Harness transport.');
+      final details = capabilities.diagnostics.map((item) => agyString(item['message']) ?? '').join('; ');
+      throw ClientModeError(
+        'FEATURE_NOT_SUPPORTED',
+        'The remote Host exposes no supported Harness transport.${details.isEmpty ? '' : ' Diagnostics: $details'}',
+      );
     }
     final created = AgyTransport(session.rpc, capabilities);
     _transport = created;
@@ -91,6 +128,26 @@ class AgyVirtualHarness implements AgyLiveContext {
   }
 
   Future<AgyClient> get client async => AgyClient(await transport);
+
+  /// The Host only trusts a cwd recorded by `dsh/sessionList`; both
+  /// `dsh/selectModel` and `session/prompt` reject a `cwd` field in their
+  /// strict schemas. Bind and load once per ACP session per tunnel, then let
+  /// the real model/prompt call surface its own error if it still fails.
+  Future<void> _prebindSession(AgyClient api, AgySession session, {bool force = false}) async {
+    if (!force && _preboundSessions.contains(session.nativeId)) return;
+    try {
+      await agyShortRetry(() async {
+        await api.prebindSession(session.nativeId, session.cwd);
+        await api.loadSession(session.nativeId);
+      });
+      _preboundSessions.add(session.nativeId);
+      _clearFailures('prebind');
+    } on Object catch (error) {
+      // Best effort: the session may already be active on the Host. The real
+      // call below reports its own diagnostic if it is not.
+      _recordFailure('prebind', error);
+    }
+  }
 
   /// Called by the carrier whenever the tunnel opens a fresh Host session.
   void onSessionReconnected() {
@@ -101,6 +158,8 @@ class AgyVirtualHarness implements AgyLiveContext {
     _catalogFuture = null;
     _hydrated.clear();
     _hydrating.clear();
+    _preboundSessions.clear();
+    _failures.clear();
     live.invalidateAll();
     if (previous != null) unawaited(previous.close());
   }
@@ -133,10 +192,12 @@ class AgyVirtualHarness implements AgyLiveContext {
       final home = loaded.workspaces.isEmpty ? null : loaded.workspaces.first.path;
       events.setSelectedWorkspace(home);
       events.publishWorkspaceBaseline(loaded);
+      _clearFailures('catalog');
       return loaded;
-    } on Object {
-      // The official client degrades an AGY discovery failure to an empty
-      // catalog. Keep the previous catalog if one was already loaded.
+    } on Object catch (error) {
+      // Never hide discovery failures in an empty catalog: keep the last
+      // good catalog for the UI and surface the diagnostic in `failures`.
+      _recordFailure('catalog', error);
       return catalog;
     }
   }
@@ -285,6 +346,7 @@ class AgyVirtualHarness implements AgyLiveContext {
           'items': loaded.workspaces.map((workspace) => workspace.workspaceView).toList(),
           'archivedSessionIds': const <Object?>[],
           'pinnedSessionIds': const <Object?>[],
+          'failures': failures,
         };
 
       case 'workspace/create':
@@ -336,6 +398,7 @@ class AgyVirtualHarness implements AgyLiveContext {
               .toList(),
           'archivedSessionIds': const <Object?>[],
           'pinnedSessionIds': const <Object?>[],
+          'failures': failures,
         };
 
       case 'session/projections':
@@ -449,6 +512,9 @@ class AgyVirtualHarness implements AgyLiveContext {
     }
 
     final nativeId = await (await client).createSession(cwd);
+    // A freshly created ACP session is already active and cwd-bound on the
+    // Host; do not issue a redundant session/load before its first prompt.
+    _preboundSessions.add(nativeId);
     final session = agyRegisterSession(
       loaded,
       workspace ?? AgyWorkspace(id: agyWorkspaceId(cwd), path: cwd, title: agyPathLeaf(cwd)),
@@ -477,18 +543,40 @@ class AgyVirtualHarness implements AgyLiveContext {
     if (text.isEmpty && images.isEmpty) {
       throw const AgyFailure('bad-request', 'An AGY prompt must contain text or images.');
     }
+    // `session/prompt` has no `cwd` field and Antigravity gets no Host-side
+    // preparation: bind the trusted directory and load the session first so
+    // an inactive/discovered session behaves like an active one.
+    final api = await client;
+    await _prebindSession(api, session);
+
     final liveFollow = await live.ensureFollow(session);
     live.beginPrompt(session, text);
     session.blank = false;
     session.updatedAt = DateTime.now().millisecondsSinceEpoch;
     session.running = true;
     try {
-      await (await client).prompt(session.nativeId, text, images);
-    } on Object {
-      live.abortTurn(session.id, kind: 'error');
-      session.running = false;
-      rethrow;
+      await agyShortRetry(() => api.prompt(session.nativeId, text, images), attempts: 2);
+    } on Object catch (error) {
+      if (!agyIsTransientError(error)) {
+        live.abortTurn(session.id, kind: 'error');
+        session.running = false;
+        rethrow;
+      }
+      // The Host may still consider the session inactive. Force a fresh
+      // sessionList binding + session/load and make one last attempt while the
+      // live turn is open, then surface the real error if that also fails.
+      _recordFailure('prompt', error);
+      await _prebindSession(api, session, force: true);
+      try {
+        await api.prompt(session.nativeId, text, images);
+      } on Object catch (retryError) {
+        _recordFailure('prompt', retryError);
+        live.abortTurn(session.id, kind: 'error');
+        session.running = false;
+        rethrow;
+      }
     }
+    _clearFailures('prompt');
     invalidateHistory(session.id);
     unawaited(refreshCatalog(force: true));
     return <String, Object?>{'accepted': true, 'streamId': liveFollow.nativeId};
@@ -516,32 +604,43 @@ class AgyVirtualHarness implements AgyLiveContext {
       };
   }
 
-  /// Fetches the raw `dsh/sessionModels` payload for one session, or `null`
-  /// when the Host has no model capability or discovery fails.
-  Future<JsonMap?> _fetchModels(AgySession session) async {
+  /// Fetches the raw `dsh/sessionModels` payload for one session. Failures are
+  /// values, never swallowed into an empty catalog: the native model picker
+  /// shows them through the catalog `failures` list.
+  Future<AgyFetchResult> _fetchModels(AgySession session) async {
     if (!(explicitCapabilities?.models ?? false) && !(await transport).capabilities.models) {
-      return null;
+      const failure = AgyFailure('FEATURE_NOT_SUPPORTED', 'The Host does not expose an AGY model catalog.');
+      _recordFailure('models', failure);
+      return const AgyFetchResult.failure(failure);
     }
     try {
-      final raw = agyMap(await (await client).models(session.nativeId));
-      return raw.isEmpty ? null : raw;
-    } on Object {
-      return null;
+      final api = await client;
+      await _prebindSession(api, session);
+      final raw = agyMap(await agyShortRetry(() => api.models(session.nativeId)));
+      if (raw.isEmpty) {
+        return const AgyFetchResult.failure(
+          AgyFailure('EMPTY_MODEL_CATALOG', 'The Host returned an empty Antigravity model catalog.'),
+        );
+      }
+      return AgyFetchResult.value(raw);
+    } on Object catch (error) {
+      _recordFailure('models', error);
+      return AgyFetchResult.failure(error);
     }
   }
 
   Future<JsonMap> _modelsFor(AgySession session) async {
-    final raw = await _fetchModels(session);
+    final raw = (await _fetchModels(session)).raw;
     if (raw == null) {
-      // The Host exposes no model catalog; degrade to an empty Antigravity
-      // group with the session's current selection (or the Host default).
+      // Keep the wire shape but surface why the picker has no models instead
+      // of presenting a silent empty Antigravity group.
       return <String, Object?>{
         'current': session.selectedModel.isNotEmpty
             ? session.selectedModel
             : <String, Object?>{'provider': agyBackend, 'model': 'host-settings'},
         'routable': true,
         'groups': const <Object?>[],
-        'failures': const <Object?>[],
+        'failures': _catalogFailures(const <String, Object?>{}),
       };
     }
     final current = agyMap(raw['current']);
@@ -556,7 +655,7 @@ class AgyVirtualHarness implements AgyLiveContext {
               : <String, Object?>{'provider': agyBackend, 'model': 'host-settings'}),
       'routable': agyBool(raw['routable'] ?? true),
       'groups': projected['groups'],
-      'failures': projected['failures'],
+      'failures': _catalogFailures(projected),
     };
   }
 
@@ -618,17 +717,19 @@ class AgyVirtualHarness implements AgyLiveContext {
     // AGY session, mirroring the official virtual harness.
     session ??= _preferredSession();
     if (session == null) {
-      return agyEmptyModelCatalog();
+      final empty = agyEmptyModelCatalog();
+      return <String, Object?>{...empty, 'failures': _catalogFailures(empty)};
     }
-    final raw = await _fetchModels(session);
-    if (raw == null) {
-      return agyEmptyModelCatalog();
+    final fetched = await _fetchModels(session);
+    if (fetched.raw == null) {
+      final empty = agyEmptyModelCatalog();
+      return <String, Object?>{...empty, 'failures': _catalogFailures(empty)};
     }
-    final projected = agyModelCatalogProjection(raw);
+    final projected = agyModelCatalogProjection(fetched.raw!);
     // When the preferred session carries a selection it wins over the
     // Host-reported default.
     if (session.selectedModel.isNotEmpty) projected['default'] = session.selectedModel;
-    return projected;
+    return <String, Object?>{...projected, 'failures': _catalogFailures(projected)};
   }
 
   Future<Object?> _models(JsonMap request) => _modelsFor(_requireSession(request));
@@ -660,9 +761,19 @@ class AgyVirtualHarness implements AgyLiveContext {
   Future<Object?> _selectModel(JsonMap request) async {
     final session = _requireSession(request);
     final selection = _selectionFromRequest(request, session);
-    final selected = await (await client).selectModel(session.nativeId, selection);
-    setModelSelection(session.id, selected);
-    return <String, Object?>{'selected': selected};
+    final api = await client;
+    // `dsh/selectModel` rejects `cwd` but the Host needs a trusted session→cwd
+    // binding before it can resolve the backend's model catalog.
+    await _prebindSession(api, session);
+    try {
+      final selected = await agyShortRetry(() => api.selectModel(session.nativeId, selection));
+      setModelSelection(session.id, selected);
+      _clearFailures('selectModel');
+      return <String, Object?>{'selected': selected};
+    } on Object catch (error) {
+      _recordFailure('selectModel', error);
+      rethrow;
+    }
   }
 
   Future<Object?> _selectPermission(JsonMap request) async {
@@ -688,6 +799,8 @@ class AgyVirtualHarness implements AgyLiveContext {
       'provider': 'Antigravity',
       'attachedSessions': loaded.sessions.length,
       'canOpenPath': loaded.workspaces.isNotEmpty,
+      'failures': failures,
+      'capabilityDiagnostics': explicitCapabilities?.diagnostics ?? const <JsonMap>[],
     };
   }
 }

@@ -48,10 +48,15 @@ class ReadListRefresh {
 /// Bounded, process-local, display-only snapshots. Bounds refer to encoded
 /// whitelist data, not total Dart heap; row/text limits additionally bound
 /// object counts. No persistence and no automatic retry/write behavior.
+///
+/// A snapshot is kept for five minutes after its authoritative read. When the
+/// Agent changes, a relay identity changes too, so the target Agent's own
+/// (still fresh) snapshot can be shown at once while its connection refreshes;
+/// a successful refresh replaces it with authoritative data.
 class ReadListCache {
   ReadListCache({
     DateTime Function()? now,
-    this.ttl = const Duration(minutes: 10),
+    this.ttl = const Duration(minutes: 5),
     this.maxEntries = 32,
     this.maxEntryBytes = 256 * 1024,
     this.maxBytes = 2 * 1024 * 1024,

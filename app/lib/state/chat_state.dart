@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/l10n.dart';
 import '../usage/usage_stats.dart';
 import 'account_state.dart';
+import 'agent_selection_state.dart';
 import 'attachments.dart';
 import 'chat_error_text.dart';
 import 'connection_state.dart';
@@ -695,13 +697,17 @@ class ChatController extends Notifier<ChatState> {
 
   /// Host key shared by the cache path and the entry: a display-name change
   /// must not lose the window.
-  static String _cacheHostId(HostRef host) => '${host.kind.name}:${host.id}';
+  /// A relay Host's transcript belongs to the Agent that produced it. Local
+  /// and SSH hosts always run DSH and keep their existing store key.
+  static String _cacheHostId(HostRef host, RemoteAgent agent) => host.kind == HostKind.relay
+      ? '${host.kind.name}:${host.id}:${agent.code}'
+      : '${host.kind.name}:${host.id}';
 
   /// Seeds the loaded transcript with the cached window for this session, once
   /// per Host; a snapshot arriving meanwhile wins.
   void _seedFromCache() {
     final host = ref.read(activeHostProvider);
-    final key = _cacheHostId(host);
+    final key = _cacheHostId(host, ref.read(activeAgentProvider));
     if (_seedKey == key) return;
     _seedKey = key;
     final owner = ref;
@@ -740,7 +746,7 @@ class ChatController extends Notifier<ChatState> {
     final host = ref.read(activeHostProvider);
     final window = CachedTranscript(
       account: ref.read(accountProvider).profile?.id ?? localChatOwner,
-      hostId: _cacheHostId(host),
+      hostId: _cacheHostId(host, ref.read(activeAgentProvider)),
       sessionId: sessionId,
       cursor: cursor,
       title: _transcript.title,
@@ -753,7 +759,7 @@ class ChatController extends Notifier<ChatState> {
 
   PendingSendKey _pendingKey() => PendingSendKey(
     account: ref.read(accountProvider).profile?.id ?? localChatOwner,
-    host: _cacheHostId(ref.read(activeHostProvider)),
+    host: _cacheHostId(ref.read(activeHostProvider), ref.read(activeAgentProvider)),
     session: sessionId,
   );
 

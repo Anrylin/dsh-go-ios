@@ -11,6 +11,7 @@ import '../runtime/local_paths.dart';
 import '../runtime/runtime_bridge.dart';
 import '../runtime/runtime_state.dart';
 import 'account_state.dart';
+import 'agent_selection_state.dart';
 import 'connection_state.dart';
 import 'hosts_state.dart';
 import 'read_list_epoch.dart';
@@ -243,6 +244,9 @@ final readListIdentityProvider = Provider<ReadListIdentity?>((ref) {
         host.id,
         host.fingerprint,
         host.harnessVersion,
+        // One Host connection carries exactly one Agent: its display snapshots
+        // must never be shown under the other Agent's identity after a switch.
+        ref.watch(activeAgentProvider).code,
         epoch,
       ]);
   }

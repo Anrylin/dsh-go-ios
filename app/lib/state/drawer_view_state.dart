@@ -160,8 +160,9 @@ class DrawerViewController extends Notifier<DrawerView> {
   /// Preferences key of [host]'s view for [agent]. Folders hold conversation
   /// ids, so they belong to one Agent: switching Agent must not show the other
   /// Agent's folders (which would look empty) or hide the target's own.
-  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) =>
-      'drawer.view.${host.kind.name}.${host.id}.${agent.code}';
+  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) => host.kind == HostKind.relay
+      ? 'drawer.view.${host.kind.name}.${host.id}.${agent.code}'
+      : 'drawer.view.${host.kind.name}.${host.id}';
 
   /// Longest folder name.
   static const maxName = 20;
