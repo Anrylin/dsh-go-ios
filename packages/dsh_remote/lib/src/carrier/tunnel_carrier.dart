@@ -40,6 +40,7 @@ const Set<String> harnessRemoteAllowlist = {
   'goals/resume',
   'job/list',
   'job/follow',
+  'job/kill',
   'llm/discoverModels',
   'llm/listConfigurableProviders',
   'llm/listProviders',
@@ -326,6 +327,12 @@ class RemoteTunnelCarrier extends DshCarrier {
 
   // ---------------------------------------------------------------------------
   // Session management
+
+  /// Opens the Host session if none is live and returns it. Carrier wrappers
+  /// call this before choosing their link shape, because the merged (DSH +
+  /// CodeX + AGY) view is only known once the session advertises its
+  /// capabilities. Concurrent calls share one connection attempt.
+  Future<RemoteHostSession> ensureSession() => _ensureSession();
 
   Future<RemoteHostSession> _ensureSession() {
     if (_closed) return Future.error(const DshClosedException('remote carrier closed'));
@@ -625,15 +632,25 @@ class RemoteTunnelCarrier extends DshCarrier {
   }
 }
 
+/// A carrier that transparently wraps another carrier (Codex virtual Harness).
+/// Declared here so remote-specific views can unwrap it without a circular
+/// import back into `src/codex/`.
+abstract class DshCarrierWrapper {
+  DshCarrier get physicalCarrier;
+}
+
 /// Remote-specific views of a [DshClient] built by `RemoteAccount.connectHost`.
 extension RemoteDshClient on DshClient {
-  /// The tunnel carrier, or `null` for a local client.
+  /// The tunnel carrier, or `null` for a local client. Unwraps the Codex
+  /// virtual carrier so status/probe/reconnect views keep working.
   RemoteTunnelCarrier? get remoteCarrier => switch (carrier) {
     final RemoteTunnelCarrier remote => remote,
+    final DshCarrierWrapper wrapper when wrapper.physicalCarrier is RemoteTunnelCarrier =>
+      wrapper.physicalCarrier as RemoteTunnelCarrier,
     _ => null,
   };
 
-  bool get isRemote => carrier is RemoteTunnelCarrier;
+  bool get isRemote => remoteCarrier != null;
 
   /// Connection states of a remote client (`null` for a local one).
   Stream<RemoteConnectionState>? get remoteStates => remoteCarrier?.states;

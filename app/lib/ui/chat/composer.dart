@@ -143,6 +143,11 @@ const double _keyGap = 8;
 
 class _ComposerState extends State<Composer> {
   Duration? _lastEscape;
+  late final _draftEmpty = ValueNotifier(widget.controller.text.trim().isEmpty);
+
+  void _draftChanged() {
+    _draftEmpty.value = widget.controller.text.trim().isEmpty;
+  }
 
   /// The last tray shown: it stays while the tray folds away.
   late Widget? _tray = widget.tray;
@@ -205,12 +210,18 @@ class _ComposerState extends State<Composer> {
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_draftChanged);
     widget.voice?.onMessage = _voiceMessage;
   }
 
   @override
   void didUpdateWidget(Composer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_draftChanged);
+      widget.controller.addListener(_draftChanged);
+      _draftChanged();
+    }
     if (oldWidget.sessionReady != widget.sessionReady ||
         oldWidget.connected != widget.connected ||
         oldWidget.running != widget.running ||
@@ -231,6 +242,8 @@ class _ComposerState extends State<Composer> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_draftChanged);
+    _draftEmpty.dispose();
     if (widget.voice?.onMessage == _voiceMessage) {
       widget.voice?.onMessage = null;
     }
@@ -288,12 +301,13 @@ class _ComposerState extends State<Composer> {
         tier: GlassTier.chrome,
         borderRadius: AppShape.radiusXl,
         child: ListenableBuilder(
-          listenable: Listenable.merge([widget.controller, ?voice]),
+          // The editor listens to text, selection and composing changes itself.
+          // Its surrounding controls only need the draft's empty/nonempty edge.
+          listenable: Listenable.merge([_draftEmpty, ?voice]),
           builder: (context, _) {
-            final value = widget.controller.value;
             final phase = voice?.phase ?? VoicePhase.idle;
             final dictating = phase == VoicePhase.listening || phase == VoicePhase.transcribing;
-            final empty = value.text.trim().isEmpty && !widget.hasAttachments;
+            final empty = _draftEmpty.value && !widget.hasAttachments;
             final showStop = widget.running && empty && !dictating;
             final showMic = !dictating && !showStop && empty && !widget.busy && (voice?.available ?? false);
             final enabled = !widget.busy && widget.connected && widget.sessionReady && (showStop || !empty);

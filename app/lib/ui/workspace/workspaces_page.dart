@@ -28,6 +28,7 @@ class WorkspacesPage extends ConsumerWidget {
     final sections = ref.watch(workspaceSectionsProvider);
     final counts = ref.watch(workspaceCountsProvider);
     final local = ref.watch(activeConnectionProvider.select((c) => c.value?.isLocal ?? true));
+    final shown = sections.fold<int>(0, (n, section) => n + section.items.length);
 
     void add() => addWorkspace(context);
 
@@ -54,6 +55,8 @@ class WorkspacesPage extends ConsumerWidget {
             action: (l10n.remoteWorkspaceAdd, add),
           ),
         ];
+      case WorkspacesStatus.ready when sections.isEmpty:
+        body = [FeatureMessage(icon: AppIcons.noResults, title: l10n.botsNoResults)];
       case WorkspacesStatus.ready:
         var index = 0;
         body = [
@@ -89,11 +92,10 @@ class WorkspacesPage extends ConsumerWidget {
 
     return AppPage.list(
       title: l10n.remoteWorkspace,
-      subtitle: state.ready && state.workspaces.isNotEmpty
-          ? Text(l10n.remoteWorkspaceCount(state.workspaces.length))
-          : null,
+      subtitle: state.ready && shown > 0 ? Text(l10n.remoteWorkspaceCount(shown)) : null,
       actions: [
-        // The empty state carries its own 「添加工作区」.
+        // The empty state carries its own 「添加工作区」; a filtered-empty
+        // list keeps the key so a workspace can still be added.
         if (state.ready && state.workspaces.isNotEmpty)
           GlassIconButton(icon: AppIcons.add, tooltip: l10n.remoteWorkspaceAdd, onPressed: add),
       ],

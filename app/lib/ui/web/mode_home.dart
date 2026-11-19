@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/agent_capabilities_state.dart';
 import '../../state/sessions_state.dart';
 import '../../state/ui_mode_state.dart';
 import '../shell/home_shell.dart';
@@ -79,6 +80,8 @@ class WebModeKey extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 网页模式 is DSH Web: a CodeX or AGY connection has no Web client to show.
+    if (!ref.watch(agentCapabilitiesProvider).webClient) return const SizedBox.shrink();
     return GlassIconButton(
       icon: AppIcons.swap,
       tooltip: context.l10n.webSwitchToWeb,

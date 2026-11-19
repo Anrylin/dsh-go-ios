@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/agent_capabilities_state.dart';
 import '../../state/bots_state.dart';
 import '../../state/sessions_state.dart';
 import '../common/app_sheet.dart' show groupTitleStyle;
@@ -70,7 +71,15 @@ class AllFeaturesPage extends ConsumerWidget {
       }
     }
 
-    final List<FeatureSection> all = sections ?? ref.watch(featureSectionsProvider);
+    // The hub is written for the native Harness: the selected Agent's
+    // capabilities decide which entries exist at all, so a CodeX or AGY
+    // connection never offers a page those endpoints cannot serve.
+    final caps = ref.watch(agentCapabilitiesProvider);
+    final List<FeatureSection> all = [
+      for (final section in (sections ?? ref.watch(featureSectionsProvider)))
+        if (section.items.where((item) => caps.supportsFeature(item.id)).toList() case final items when items.isNotEmpty)
+          FeatureSection(section.title, items, note: section.note, id: section.id),
+    ];
     final page = AppPage.list(
       title: l10n.catalogAllFeatures,
       subtitle: Text(l10n.catalogAllFeaturesSubtitle),

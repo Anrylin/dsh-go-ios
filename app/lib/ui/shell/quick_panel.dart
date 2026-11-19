@@ -3,14 +3,26 @@
 // opens them the way the drawer does; what each page requires stays with the
 // page. Which ones and in what order: 设置 › 界面 (quick_panel_items_sheet.dart).
 
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/agent_capabilities_state.dart';
 import '../../state/quick_panel_state.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'drawer/drawer_destination.dart';
+
+/// Whether 快捷入口 may offer [destination] to this Agent: the DSH Web page and
+/// the engine/plugin pages exist only on the native Harness.
+bool _available(DrawerDestination destination, AgentCapabilities caps) => switch (destination) {
+  DrawerDestination.web => caps.webClient,
+  DrawerDestination.plugins => caps.plugins,
+  DrawerDestination.engine => caps.agent == RemoteAgent.dsh,
+  DrawerDestination.remote || DrawerDestination.settings || DrawerDestination.settingsSearch => true,
+  DrawerDestination.features => true,
+};
 
 /// A destination as 快捷入口 and its settings show it, by the name and the
 /// glyph its other ways in use.
@@ -56,7 +68,13 @@ class QuickPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final items = ref.watch(quickPanelProvider.select((p) => p.items));
+    final caps = ref.watch(agentCapabilitiesProvider);
+    // The quick entries are the drawer's destinations: DSH-only pages drop out
+    // for a CodeX or AGY connection instead of opening a page it cannot serve.
+    final items = [
+      for (final destination in ref.watch(quickPanelProvider.select((p) => p.items)))
+        if (_available(destination, caps)) destination,
+    ];
     final content = Material(
       type: MaterialType.transparency,
       child: SafeArea(

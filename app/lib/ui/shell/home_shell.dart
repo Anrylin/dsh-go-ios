@@ -13,6 +13,7 @@ import '../../links/app_links.dart';
 import '../../pets/overlay_channel.dart' show petOverlayChannelProvider;
 import '../../pets/pet_overlay_bridge.dart';
 import '../../state/adaptive_layout_state.dart';
+import '../../state/agent_selection_state.dart' show activeAgentProvider;
 import '../../state/android_features.dart';
 import '../../state/drawer_view_state.dart' show drawerSelectionProvider;
 import '../../state/quick_panel_state.dart';
@@ -274,6 +275,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
   Widget build(BuildContext context) {
     final width = _drawerWidth(context);
     final sessionId = ref.watch(currentSessionProvider);
+    // A different Agent is a different Host conversation space: the open
+    // conversation belongs to the Agent that was selected, so the chat goes
+    // back to 新对话 instead of reusing an id the new Agent never had.
+    ref.listen(activeAgentProvider, (previous, next) {
+      if (previous == next) return;
+      ref.read(currentSessionProvider.notifier).select(null);
+      final selection = ref.read(drawerSelectionProvider.notifier);
+      if (selection.active) selection.end();
+    });
     final prefs = ref.watch(layoutPrefsProvider);
     // Multi-select in a list on screen (the open drawer, or the sidebar):
     // back ends it before anything else.

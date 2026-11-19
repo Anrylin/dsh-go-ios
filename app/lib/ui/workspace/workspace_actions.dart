@@ -46,11 +46,18 @@ Future<Workspace?> addWorkspace(BuildContext context) async {
 
 /// Conversation counts per workspace among the drawer's conversations.
 final workspaceCountsProvider = Provider<Map<String, int>>((ref) {
-  final visible = [for (final s in ref.watch(sessionsProvider).value ?? const <SessionSummary>[]) s.sessionId];
+  final visible = [
+    for (final s in ref.watch(sessionsProvider).value ?? const <SessionSummary>[]) s.sessionId,
+  ];
   return {
     for (final w in ref.watch(workspacesProvider).workspaces) w.workspaceId: workspaceConversationCount(w, visible),
   };
 });
+
+/// The conversations the drawer lists; 「全部对话」's count.
+final visibleSessionCountProvider = Provider<int>(
+  (ref) => (ref.watch(sessionsProvider).value ?? const <SessionSummary>[]).length,
+);
 
 /// 「N 个对话」, or 「没有对话」.
 String conversationCountLabel(int n) => n == 0 ? appL10n.remoteWorkspaceNoChats : appL10n.remoteWorkspaceChatCount(n);

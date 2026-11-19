@@ -289,6 +289,7 @@ final class CachedSessions extends ReadListData {
           running: false,
           blank: false,
           agentAvailable: false,
+          raw: const <String, Object?>{},
           projections: SessionProjections(-1, Map.unmodifiable({'title': budget.optional(row.title)})),
         ),
     ]);

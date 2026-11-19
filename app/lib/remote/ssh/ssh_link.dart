@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 
 import '../../l10n/l10n.dart';
 import '../link_status.dart';
@@ -57,6 +58,10 @@ HostLinkError hostKeyMismatchError(SshHostConfig config, PresentedHostKey key) =
 /// the client presents `Host: 127.0.0.1:<remote port>` so DSH's Host fence
 /// accepts requests that arrive through the tunnel.
 class SshHostLink implements HostLink {
+  /// An SSH Host runs the native DSH Harness only: there is no Agent choice.
+  @override
+  RemoteAgent get agent => RemoteAgent.dsh;
+
   SshHostLink({
     required this._config,
     required this._loadSecrets,

@@ -9,9 +9,13 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' as hashes;
 import 'package:dsh_client/dsh_client.dart';
 
+import '../agent/remote_agent.dart';
+import '../agy/agy_values.dart' show acpCapability, agyCapability;
+import '../agy/agy_virtual.dart';
 import '../carrier/tunnel_carrier.dart';
 import '../channel/rpc_client.dart';
 import '../channel/secure_channel.dart';
+import '../codex/codex_virtual.dart';
 import '../crypto/noise_ik.dart';
 import '../protocol/control.dart' show maxRemoteCapabilityEntries;
 import '../server/server_api.dart';
@@ -734,6 +738,10 @@ class RemoteAccount {
   ///
   /// Throws [RemoteConnectException] when not ready within [timeout], or at
   /// once for terminal failures and `HOST_OFFLINE`.
+  /// Opens an encrypted tunnel to [host] for exactly one [agent] and returns a
+  /// ready client. The Host's advertised capabilities decide whether that Agent
+  /// exists; an unsupported one fails with `AGENT_NOT_SUPPORTED` instead of
+  /// silently serving another Agent's data.
   Future<DshClient> connectHost(
     RemoteHost host, {
     void Function(RemoteConnectionState state)? onState,
@@ -743,6 +751,7 @@ class RemoteAccount {
     Duration healthInterval = const Duration(seconds: 25),
     Duration healthTimeout = const Duration(seconds: 10),
     DshTracer? tracer,
+    RemoteAgent agent = RemoteAgent.dsh,
   }) async {
     await _restore();
     final previous = _active;
@@ -755,7 +764,40 @@ class RemoteAccount {
       healthTimeout: healthTimeout,
       tracer: tracer,
     );
-    final client = DshClient.withCarrier(carrier, muxOptions: muxOptions);
+    // The Agent is chosen from the Host's own capabilities, which only exist
+    // once the tunnel session is open.
+    if (agent != RemoteAgent.dsh) {
+      try {
+        await carrier.ensureSession();
+      } on Object {
+        await carrier.close();
+        rethrow;
+      }
+      final missing = <String>[
+        for (final capability in _requiredCapabilities(agent))
+          if (!carrier.capabilities.contains(capability)) capability,
+      ];
+      if (missing.isNotEmpty) {
+        await carrier.close();
+        throw RemoteConnectException(
+          RemoteFailure(
+            'AGENT_NOT_SUPPORTED',
+            'The Host does not advertise ${agent.code}: missing ${missing.join(', ')}.',
+            retryable: false,
+          ),
+        );
+      }
+    }
+    DshCarrier effectiveCarrier = carrier;
+    switch (agent) {
+      case RemoteAgent.dsh:
+        break;
+      case RemoteAgent.codex:
+        effectiveCarrier = CodexVirtualCarrier(effectiveCarrier, hostDeviceId: host.id);
+      case RemoteAgent.agy:
+        effectiveCarrier = AgyVirtualCarrier(effectiveCarrier, hostDeviceId: host.id);
+    }
+    final client = DshClient.withCarrier(effectiveCarrier, muxOptions: muxOptions);
     final active = _ActiveConnection(client, carrier);
     _active = active;
     active.stateSub = carrier.states.listen((state) {
@@ -1136,6 +1178,15 @@ class RemoteAccount {
     }
   }
 }
+
+/// Capabilities a Host must advertise for [agent] to be usable. An Agent we
+/// cannot name a capability for counts as unsupported rather than as a
+/// pass-through: the connection must never fall back to another Agent's data.
+List<String> _requiredCapabilities(RemoteAgent agent) => switch (agent) {
+  RemoteAgent.dsh => const <String>[],
+  RemoteAgent.codex => const <String>[CodexVirtualHarness.codexAppCapability],
+  RemoteAgent.agy => const <String>[acpCapability, agyCapability],
+};
 
 RemoteConnectException _asConnectException(Object error) => switch (error) {
   RemoteConnectException() => error,

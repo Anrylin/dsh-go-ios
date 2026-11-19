@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/agent_capabilities_state.dart';
 import '../../state/header_schedule_state.dart';
 import '../agents/header_agents.dart';
 import '../common/smooth_size.dart';
@@ -124,8 +125,10 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
     final statusStyle = theme.textTheme.labelSmall?.copyWith(fontSize: 11, height: 1.25);
     final titleFloor = _titleFloor(context, statusStyle);
     // The schedule clock widens the pill by this much over its plain right
-    // padding, while the bar can afford it (see [_HeaderRow]).
-    final scheduled = ref.watch(headerSchedulesProvider.select((s) => s.shown));
+    // padding, while the bar can afford it (see [_HeaderRow]). Schedules are a
+    // native DSH feature: another Agent neither shows the clock nor queries.
+    final scheduled =
+        ref.watch(agentCapabilitiesProvider).schedules && ref.watch(headerSchedulesProvider.select((s) => s.shown));
     final clockExtra = scheduled ? HeaderScheduleCap.extraFor(pillHeight) : 0.0;
     // Wide windows: next to the rail (it has its own ≡) the key goes, and ≡
     // says what it does there (fold or unfold the list).

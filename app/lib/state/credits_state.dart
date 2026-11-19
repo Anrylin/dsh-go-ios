@@ -208,7 +208,7 @@ Future<CreditsSnapshot> fetchCredits(
     if (raw is List)
       for (final item in raw)
         if (item is Map)
-          if (_row(item) case final row?) row,
+          ?_row(item),
   ];
   final known = rows.where((r) => r.known).toList();
   final at = decoded['snapshot_at'];

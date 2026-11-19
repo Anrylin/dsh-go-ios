@@ -13,6 +13,8 @@ import '../../l10n/l10n.dart';
 import '../../runtime/runtime_bridge.dart';
 import '../../runtime/runtime_state.dart';
 import '../../runtime/local_footprint.dart';
+import '../../state/agent_capabilities_state.dart';
+import '../../state/agent_selection_state.dart';
 import '../../state/bots_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/engine_control.dart';
@@ -44,9 +46,10 @@ import '../workspace/workspace_switcher.dart';
 import '../workspace/workspaces_page.dart';
 import 'adaptive/adaptive_layout.dart' show WindowClass;
 import 'brand_mark.dart';
+import 'drawer/agent_selection_sheet.dart';
+import 'drawer/archive_notice.dart';
 import 'drawer/drawer_actions.dart';
 import 'drawer/drawer_destination.dart';
-import 'drawer/archive_notice.dart';
 import 'drawer/drawer_filter_bar.dart';
 import 'drawer/drawer_list.dart';
 import 'drawer/selection_bars.dart';
@@ -183,6 +186,7 @@ class SessionsDrawer extends ConsumerWidget {
         child: Row(
           children: [
             Expanded(child: WorkspaceSwitcher(onManage: manageWorkspaces)),
+            const _AgentSelectorKey(),
             _ViewOptionsKey(onClose: onClose),
           ],
         ),
@@ -398,6 +402,58 @@ class _ViewOptionsKey extends ConsumerWidget {
   }
 }
 
+/// 「智能体」: the one Agent this remote Host's connection speaks to. A text
+/// selector right after the workspace switcher: tapping it opens a single
+/// choice sheet, and the choice reconnects rather than filtering a merged list.
+/// 本机 and SSH hosts have only DSH, so they show no selector at all.
+class _AgentSelectorKey extends ConsumerWidget {
+  const _AgentSelectorKey();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final host = ref.watch(activeHostProvider);
+    if (host.kind != HostKind.relay || host.id.isEmpty) return const SizedBox.shrink();
+    final agent = ref.watch(agentSelectionProvider.select((s) => s.forHost(host.id)));
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Tooltip(
+        message: agent.code,
+        child: Semantics(
+          button: true,
+          label: agent.code,
+          onTap: () => unawaited(showAgentSelectionSheet(context, host.id)),
+          excludeSemantics: true,
+          child: Material(
+            type: MaterialType.transparency,
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => unawaited(showAgentSelectionSheet(context, host.id)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      agent.code,
+                      maxLines: 1,
+                      style: theme.textTheme.labelLarge?.copyWith(color: color),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(AppIcons.expand, size: 16, color: color),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Soft top and bottom edges on the list, so rows fade into the header and
 /// the identity bar instead of being cut. At rest nothing is under either fade
 /// (the list's own padding is deeper).
@@ -458,8 +514,10 @@ class _SessionList extends ConsumerWidget {
       return const _SkeletonList();
     }
     // DS Bot's conversations (its Bots' chats, groups, members' sessions)
-    // fold into one row that opens the Bot pages.
-    final botReady = ref.watch(dsBotProvider.select((s) => s.ready));
+    // fold into one row that opens the Bot pages. It exists only on the native
+    // DSH Harness, so another Agent neither shows nor queries it.
+    final caps = ref.watch(agentCapabilitiesProvider);
+    final botReady = caps.bots && ref.watch(dsBotProvider.select((s) => s.ready));
     final showBots = scope.bots.isNotEmpty || (workspace == null && botReady);
     if (scope.sessions.isEmpty && !showBots && ref.watch(drawerViewProvider).folders.isEmpty) {
       if (scope.readOnly) return _Centered(child: Text(readListStatusText(scope.status)));
@@ -559,12 +617,15 @@ class _SessionList extends ConsumerWidget {
                       title: Text(context.l10n.shellMultiSelect),
                       onTap: () => Navigator.pop(sheet, 'select'),
                     ),
-                    ListTile(
-                      leading: const Icon(AppIcons.archive),
-                      title: Text(context.l10n.shellArchive),
-                      subtitle: Text(context.l10n.shellArchiveStopsTurn),
-                      onTap: () => Navigator.pop(sheet, 'archive'),
-                    ),
+                    // Archive is a native DSH endpoint: CodeX and AGY have no
+                    // equivalent, so the tile is not offered there at all.
+                    if (ref.read(agentCapabilitiesProvider).archive)
+                      ListTile(
+                        leading: const Icon(AppIcons.archive),
+                        title: Text(context.l10n.shellArchive),
+                        subtitle: Text(context.l10n.shellArchiveStopsTurn),
+                        onTap: () => Navigator.pop(sheet, 'archive'),
+                      ),
                     SessionDeleteTile(
                       ids: [s.sessionId],
                       owner: deletionOwner,

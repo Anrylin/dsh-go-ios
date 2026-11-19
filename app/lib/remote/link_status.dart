@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 
 import '../l10n/l10n.dart';
 
@@ -222,6 +223,10 @@ class HostLinkStatus {
 /// `dsh web` restarted on another port). The previous client is closed by
 /// the link after the new one has been published.
 abstract class HostLink {
+  /// The Agent this link speaks to. A link carries exactly one; a link that
+  /// cannot offer a choice (SSH, which only runs DSH) keeps [RemoteAgent.dsh].
+  RemoteAgent get agent => RemoteAgent.dsh;
+
   HostLinkStatus get status;
   Stream<HostLinkStatus> get statuses;
 

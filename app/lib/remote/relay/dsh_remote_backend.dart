@@ -265,7 +265,11 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
   );
 
   @override
-  Future<DshClient> connectHost(RelayHost host, {RelayStateCallback? onState}) => _map(() async {
+  Future<DshClient> connectHost(
+    RelayHost host, {
+    RelayStateCallback? onState,
+    remote.RemoteAgent agent = remote.RemoteAgent.dsh,
+  }) => _map(() async {
     var target = _hosts[host.id];
     if (target == null) {
       await listHosts();
@@ -276,6 +280,7 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
     }
     return account.connectHost(
       target,
+      agent: agent,
       muxOptions: _muxOptions,
       timeout: const Duration(seconds: 45),
       confirmNewHost: (h) async => approves(h.id, h.fingerprint),

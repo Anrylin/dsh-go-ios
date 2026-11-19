@@ -24,10 +24,32 @@ export 'package:dsh_client/dsh_client.dart';
 
 export 'src/account/remote_account.dart'
     show HostTrustPrompt, RemoteAccount, RemoteHost, RemoteHostTrust, RemoteLogin, RemoteUser;
+export 'src/agent/remote_agent.dart';
 export 'src/account/secret_store.dart';
+export 'src/agy/agy_api.dart';
+export 'src/agy/agy_catalog.dart';
+export 'src/agy/agy_contract.dart';
+export 'src/agy/agy_events.dart';
+export 'src/agy/agy_history.dart';
+export 'src/agy/agy_image_codec.dart';
+export 'src/agy/agy_live.dart';
+export 'src/agy/agy_values.dart' hide directRemoteCallBytes, maxSecureMessageBytes;
+export 'src/agy/agy_virtual.dart';
 export 'src/carrier/tunnel_carrier.dart';
 export 'src/channel/rpc_client.dart';
 export 'src/channel/secure_channel.dart';
+export 'src/codex/codex_api.dart';
+export 'src/codex/codex_catalog.dart';
+export 'src/codex/codex_contract.dart';
+export 'src/codex/codex_events.dart';
+export 'src/codex/codex_history.dart';
+export 'src/codex/codex_history_cache.dart';
+export 'src/codex/codex_image_codec.dart';
+export 'src/codex/codex_live.dart';
+export 'src/codex/codex_permissions.dart';
+export 'src/codex/codex_turn_end.dart';
+export 'src/codex/codex_values.dart';
+export 'src/codex/codex_virtual.dart';
 export 'src/crypto/noise_ik.dart'
     show
         NoiseIkSession,

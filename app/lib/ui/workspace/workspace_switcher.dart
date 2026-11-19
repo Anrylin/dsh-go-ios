@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/connection_state.dart';
 import '../../state/drawer_view_state.dart';
-import '../../state/sessions_state.dart';
 import '../../state/workspaces_state.dart';
 import '../common/app_sheet.dart';
 import '../common/list_page_row.dart';
@@ -44,13 +43,14 @@ class WorkspaceSwitcher extends ConsumerWidget {
     final theme = Theme.of(context);
     final tertiary = DshColors.of(context).textTertiary;
     final retainedLabel = retained?.workspaceLabel;
-    final label = retainedLabel != null
-        ? retainedLabel == 'default-workspace'
-              ? defaultWorkspaceTitle
-              : retainedLabel
-        : selected == null
-        ? l10n.remoteWorkspaceAllChats
-        : workspaceTitle(selected);
+    final String label;
+    if (selected != null) {
+      label = workspaceTitle(selected);
+    } else if (retainedLabel != null) {
+      label = retainedLabel == 'default-workspace' ? defaultWorkspaceTitle : retainedLabel;
+    } else {
+      label = l10n.remoteWorkspaceAllChats;
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
       child: Align(
@@ -127,7 +127,7 @@ class WorkspaceSheet extends ConsumerWidget {
     final sections = ref.watch(workspaceSectionsProvider);
     final selected = ref.watch(selectedWorkspaceProvider)?.workspaceId;
     final counts = ref.watch(workspaceCountsProvider);
-    final total = ref.watch(sessionsProvider.select((s) => s.value?.length ?? 0));
+    final total = ref.watch(visibleSessionCountProvider);
     final local = ref.watch(activeConnectionProvider.select((c) => c.value?.isLocal ?? true));
     final prefs = ref.read(workspacePrefsProvider.notifier);
 

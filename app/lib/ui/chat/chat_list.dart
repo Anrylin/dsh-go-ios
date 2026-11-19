@@ -38,6 +38,7 @@ import 'composer_toast.dart';
 import 'dsh_ui/dsh_ui.dart';
 import 'render/markdown_image.dart';
 import 'trajectory_sheet.dart';
+import 'turn_summary.dart' show forgetToolSummaries;
 import 'widgets/approval_card.dart';
 import 'widgets/artifact_card.dart';
 import 'widgets/assistant_message.dart';
@@ -145,6 +146,75 @@ class ChatList extends ConsumerStatefulWidget {
   ConsumerState<ChatList> createState() => _ChatListState();
 }
 
+/// What a built row subtree depends on. Historical rows keep their Widget
+/// instance while a later draft streams: Flutter then skips their Elements
+/// altogether, including Markdown/build caches inside the row.
+class _RowBuildKey {
+  const _RowBuildKey({
+    required this.row,
+    required this.gap,
+    required this.fresh,
+    required this.mediaPaths,
+    required this.artifacts,
+    required this.running,
+    required this.autoAnswered,
+    required this.locale,
+    required this.callbacks,
+  });
+
+  final ChatRow row;
+  final double gap;
+  final int? fresh;
+  final Set<String> mediaPaths;
+  final List<TurnArtifacts> artifacts;
+  final bool running;
+  final Set<String> autoAnswered;
+  final Locale locale;
+  final ({
+    String sessionId,
+    ValueChanged<PendingPrompt>? onWithdraw,
+    ValueChanged<PendingPrompt>? onSendNow,
+    ValueChanged<String>? onEditPrompt,
+    ResendPrompt? onResend,
+    ValueChanged<String>? onQuote,
+    VoidCallback? onSwitchModel,
+    ComposerToast? onToast,
+  }) callbacks;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RowBuildKey &&
+      identical(row, other.row) &&
+      gap == other.gap &&
+      fresh == other.fresh &&
+      setEquals(mediaPaths, other.mediaPaths) &&
+      identical(artifacts, other.artifacts) &&
+      running == other.running &&
+      identical(autoAnswered, other.autoAnswered) &&
+      locale == other.locale &&
+      callbacks == other.callbacks;
+
+  @override
+  int get hashCode => Object.hash(
+    identityHashCode(row),
+    gap,
+    fresh,
+    mediaPaths.length,
+    identityHashCode(artifacts),
+    running,
+    identityHashCode(autoAnswered),
+    locale,
+    callbacks,
+  );
+}
+
+class _RowBuild {
+  const _RowBuild(this.key, this.widget);
+
+  final _RowBuildKey key;
+  final Widget widget;
+}
+
 class _ChatListState extends ConsumerState<ChatList> {
   late final _scroll = _TopBoundedScrollController(_leadingBoundary);
   final _centerKey = UniqueKey();
@@ -193,6 +263,16 @@ class _ChatListState extends ConsumerState<ChatList> {
   Object? _rowsInputs;
   Set<String> _autoAnswered = const {};
 
+  // Built subtrees are keyed by row key. A publish that leaves the rows alone
+  // (status/title updates, or a later draft's delta) reuses these instances.
+  final Map<String, _RowBuild> _rowBuilds = {};
+  Set<String> _mediaPaths = const <String>{};
+  List<TurnArtifacts> _rowArtifacts = const [];
+
+  /// What this conversation last built from; [dispose] takes its calls out of
+  /// the tool summary caches with it.
+  ChatState? _builtState;
+
   double? _lastViewport;
   int _lastPendingCount = 0;
   bool _followScheduled = false;
@@ -236,12 +316,18 @@ class _ChatListState extends ConsumerState<ChatList> {
     _scroll.dispose();
     _showJump.dispose();
     _hasNew.dispose();
+    // This conversation's calls leave the tool summary caches with it.
+    forgetToolSummaries({
+      for (final item in _builtState?.items ?? const <ChatItem>[])
+        if (item is ToolChatItem) item.callId,
+    });
     super.dispose();
   }
 
   @override
   void didUpdateWidget(ChatList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) _rowBuilds.clear();
     if (oldWidget.bottomInset != widget.bottomInset && _pinned) _follow();
   }
 
@@ -477,6 +563,7 @@ class _ChatListState extends ConsumerState<ChatList> {
     final hadPending = _rows.any((r) => r is PendingRow);
     _rows = _rowCache.update(s, foldTurns: foldTurns, artifacts: artifacts);
     _index = _rowCache.index;
+    if (_rowBuilds.isNotEmpty) _rowBuilds.removeWhere((key, _) => !_index.containsKey(key));
     // 被插话切开的轮:前几片的摘要行(`tp<轮起点>@<插话>`)跟最后一片一起收。
     // 这一帧没建出来的(在屏幕外)不留到以后:翻回去时不该再播一遍。
     for (final row in _rows) {
@@ -592,11 +679,17 @@ class _ChatListState extends ConsumerState<ChatList> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(chatProvider(widget.sessionId));
+    _builtState = s;
     _running = s.running;
+    final artifacts = ref.watch(sessionArtifactsProvider(widget.sessionId));
+    // Replies read this outside their own build; watch it here so a real media
+    // change invalidates the kept row widgets without a text delta doing so.
+    _mediaPaths = ref.watch(sessionMediaPathsProvider(widget.sessionId));
+    _rowArtifacts = artifacts;
     _deriveRows(
       s,
       foldTurns: ref.watch(settingsProvider.select((s) => s.foldCompletedTurns)),
-      artifacts: ref.watch(sessionArtifactsProvider(widget.sessionId)),
+      artifacts: artifacts,
     );
     final rows = _rows;
     final split = _split;
@@ -738,6 +831,35 @@ class _ChatListState extends ConsumerState<ChatList> {
     final row = _rows[index];
     final previous = index > 0 ? _rows[index - 1] : null;
     final fresh = _fresh.remove(row.key);
+    final gap = _gapBefore(row, previous);
+    final key = _RowBuildKey(
+      row: row,
+      gap: gap,
+      fresh: fresh,
+      mediaPaths: _mediaPaths,
+      artifacts: _rowArtifacts,
+      running: _running,
+      autoAnswered: _autoAnswered,
+      locale: AppLocale.current,
+      callbacks: (
+        sessionId: widget.sessionId,
+        onWithdraw: widget.onWithdraw,
+        onSendNow: widget.onSendNow,
+        onEditPrompt: widget.onEditPrompt,
+        onResend: widget.onResend,
+        onQuote: widget.onQuote,
+        onSwitchModel: widget.onSwitchModel,
+        onToast: widget.onToast,
+      ),
+    );
+    final cached = _rowBuilds[row.key];
+    if (cached != null && cached.key == key) return cached.widget;
+    final built = _buildRowWidget(row, gap, fresh);
+    _rowBuilds[row.key] = _RowBuild(key, built);
+    return built;
+  }
+
+  Widget _buildRowWidget(ChatRow row, double gap, int? fresh) {
     return KeyedSubtree(
       key: ValueKey<String>(row.key),
       child: Center(
@@ -749,7 +871,7 @@ class _ChatListState extends ConsumerState<ChatList> {
             onHeight: _recordRowHeight,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0),
+              padding: EdgeInsets.fromLTRB(AppSpace.gutter, gap, AppSpace.gutter, 0),
               child: StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row)),
             ),
           ),

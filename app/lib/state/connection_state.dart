@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/l10n.dart';
@@ -11,6 +12,7 @@ import '../remote/ssh/ssh_link.dart';
 import '../remote/ssh/ssh_transport.dart';
 import '../runtime/runtime_bridge.dart';
 import '../runtime/runtime_state.dart';
+import 'agent_selection_state.dart';
 import 'hosts_state.dart';
 import 'permission_default_repair.dart';
 import 'provider_backend.dart';
@@ -27,9 +29,14 @@ class HostConnection {
     this.hostId,
     this.name,
     this.workingDirectory,
+    this.agent = RemoteAgent.dsh,
   });
 
   final DshClient client;
+
+  /// The Agent this connection speaks to: the drawer's selector for a remote
+  /// Host, always DSH for 本机. Every endpoint reachable here belongs to it.
+  final RemoteAgent agent;
 
   /// A fixed label (tests); null builds it from [kind] and [name].
   final String? _label;
@@ -198,9 +205,13 @@ final hostLinkProvider = Provider.autoDispose.family<HostLink?, HostRef>((ref, h
       return link;
     case HostKind.relay:
       final backend = ref.watch(relayBackendProvider);
+      // Switching the Agent rebuilds this link, which closes the old connection
+      // and opens one for the chosen Agent — never a filter over shared data.
+      final agent = ref.watch(agentSelectionProvider.select((s) => s.forHost(host.id)));
       final link = RelayHostLink(
         backend: backend,
         hostId: host.id,
+        agent: agent,
         // Fresh presence straight from the server (the account list on the
         // remote page refreshes on its own).
         resolveHost: () async {
@@ -255,6 +266,12 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
   Future<HostConnection?> build() async {
     final link = ref.watch(hostLinkProvider(host));
     if (link == null) return null;
+    // A rebuild means the destination changed: another Host, or another Agent
+    // on the same Host (the Agent is part of the link). Retire the previous
+    // connection right away so a tap that lands during the reconnect cannot
+    // write to the Agent the person just left; every reader then sees "not
+    // connected" until the new client is ready.
+    if (state.hasValue && state.value != null) state = const AsyncLoading<HostConnection?>();
     final name = ref.watch(hostNameProvider(host));
 
     HostConnection wrap(DshClient client) => HostConnection(
@@ -263,6 +280,7 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
       isLocal: false,
       kind: host.kind,
       hostId: host.id,
+      agent: link.agent,
       workingDirectory: link is SshHostLink ? link.resolvedWorkingDirectory : null,
     );
 

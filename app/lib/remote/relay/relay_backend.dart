@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 
 import '../../l10n/l10n.dart';
 import '../link_status.dart';
@@ -159,8 +160,13 @@ abstract class RelayBackend {
   RelayPath? pathOf(DshClient client);
 
   /// Opens an end-to-end encrypted tunnel to [host] and returns a ready
-  /// client. [onState] reports progress and later drops/reconnects.
-  Future<DshClient> connectHost(RelayHost host, {RelayStateCallback? onState});
+  /// client for exactly [agent]. [onState] reports progress and later
+  /// drops/reconnects.
+  Future<DshClient> connectHost(
+    RelayHost host, {
+    RelayStateCallback? onState,
+    RemoteAgent agent = RemoteAgent.dsh,
+  });
 }
 
 /// Optional real network observations, without expanding the account/backend contract.
@@ -215,7 +221,11 @@ class UnavailableRelayBackend implements RelayBackend {
   RelayPath? pathOf(DshClient client) => null;
 
   @override
-  Future<DshClient> connectHost(RelayHost host, {RelayStateCallback? onState}) => Future.error(_error);
+  Future<DshClient> connectHost(
+    RelayHost host, {
+    RelayStateCallback? onState,
+    RemoteAgent agent = RemoteAgent.dsh,
+  }) => Future.error(_error);
 }
 
 /// [HostLink] over a [RelayBackend] connection.
@@ -224,6 +234,7 @@ class RelayHostLink implements HostLink, NetworkInspectableHostLink {
     required this.backend,
     required this.hostId,
     required this.resolveHost,
+    this.agent = RemoteAgent.dsh,
     Stream<void>? kicks,
     Backoff? backoff,
   }) : _backoff = backoff ?? Backoff() {
@@ -232,6 +243,10 @@ class RelayHostLink implements HostLink, NetworkInspectableHostLink {
 
   final RelayBackend backend;
   final String hostId;
+
+  /// The one Agent this link speaks to; connecting and every reconnect use it.
+  @override
+  final RemoteAgent agent;
 
   /// Looks the host up in the account's (refreshed) list.
   final Future<RelayHost?> Function() resolveHost;
@@ -325,6 +340,7 @@ class RelayHostLink implements HostLink, NetworkInspectableHostLink {
     // States from an earlier attempt's client (closing now) are stale.
     final client = await backend.connectHost(
       host,
+      agent: agent,
       onState: (state, error) {
         if (attempt == _attempt) _onRelayState(state, error);
       },

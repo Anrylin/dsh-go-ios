@@ -164,6 +164,8 @@ class ChatTranscript {
   final Map<String, UserQuestionRequest> _questions = {};
   Map<String, List<Message>> _inbox = const {'next-turn': [], 'next-step': []};
   List<ChatItem>? _durable;
+  // The live projection also stays stable until its durable base or drafts change.
+  List<ChatItem>? _items;
   _DurableFold? _durableFold;
   final List<SessionLogEvent> _durableTail = [];
   bool? _derivedRunning;
@@ -239,11 +241,43 @@ class ChatTranscript {
     return goal;
   }
 
-  void _logChanged({SessionLogEvent? appended}) {
+  /// Whether a durable event can change the rendered [items] projection.
+  ///
+  /// Only these event types are handled by [_DurableFold.apply] in a way that
+  /// adds/changes an item. Everything else (turn/step markers, metadata,
+  /// approval policy, todo writes, unknown frames, ...) is deliberately a
+  /// no-op for the fold and must not churn the published list.
+  static bool _affectsItems(SessionLogEvent event) => switch (event) {
+    UserMessageEvent() => true,
+    AssistantMessageEvent() => true,
+    ToolCallEvent() => true,
+    ToolResultEvent() => true,
+    ApprovalAskedEvent() => true,
+    ApprovalDecidedEvent() => true,
+    TurnEndedEvent() => true,
+    LlmRetryEvent() => true,
+    _ => false,
+  };
+
+  /// Invalidates derived projections after a log change.
+  ///
+  /// [appended] is an event added at the end of the loaded log (the fold can
+  /// extend its cached prefix with it); `null` means the log was rewritten
+  /// (snapshot/resync/older history) and the fold must start over.
+  ///
+  /// [affectsItems] is false for log events that carry no displayable change
+  /// (title, permission, turn/step markers, unknown frames, ...). Those still
+  /// enter the log and the fold tail, but the already published item list and
+  /// its item instances stay untouched — chat rows keep their identity.
+  void _logChanged({SessionLogEvent? appended, bool affectsItems = true}) {
     if (appended == null) {
       _durableFold = null;
       _durableTail.clear();
       _derivedRunning = null;
+      // A rewritten log (snapshot/resync/older page or an out-of-order event
+      // that replaces an existing seq) can change the projection even when
+      // the incoming event itself displays nothing — always rebuild.
+      affectsItems = true;
     } else {
       if (_durableFold != null) _durableTail.add(appended);
       if (_derivedRunning != null) {
@@ -251,7 +285,10 @@ class ChatTranscript {
         if (appended is TurnEndedEvent) _derivedRunning = false;
       }
     }
-    _durable = null;
+    if (affectsItems) {
+      _durable = null;
+      _items = null;
+    }
     if (_traces case final traces?) _previousTraces = traces;
     _traces = null;
     _todos = null;
@@ -261,11 +298,12 @@ class ChatTranscript {
   List<ChatItem> get items {
     final durable = _durable ??= _build();
     if (_drafts.isEmpty) return durable;
+    if (_items case final cached?) return cached;
     // A draft shares its step's row key with the message it commits to; keys stay unique when a step
     // is already committed or has more than one live attempt (the latest keeps the key).
     final used = {for (final item in durable) item.key};
     final latest = {for (final draft in _drafts.values) draft.rowKey: draft};
-    return [
+    return _items = [
       ...durable,
       for (final draft in _drafts.values)
         ...draft.items(useRowKey: !used.contains(draft.rowKey) && identical(latest[draft.rowKey], draft)),
@@ -317,19 +355,22 @@ class ChatTranscript {
             _runningOverride = false;
           case AssistantMessageEvent(:final turn, :final step) || AssistantAttemptEvent(:final turn, :final step):
             _drafts.removeWhere((_, d) => d.turn == turn && d.step == step && d.startedAfterSeq < event.seq);
+            _items = null;
           default:
             break;
         }
-        _logChanged(appended: appended ? event : null);
+        _logChanged(appended: appended ? event : null, affectsItems: _affectsItems(event));
         return true;
       case AssistantStreamStarted():
         _drafts[event.attemptId] = _Draft(event.attemptId, event.turn, event.step, event.startedAfterSeq);
+        _items = null;
         return true;
       case AssistantChunkEvent():
         final draft = _drafts[event.attemptId];
         if (draft == null || event.index < draft.nextIndex) return false;
         draft.apply(event.chunk);
         draft.nextIndex = event.index + 1;
+        _items = null;
         return true;
       case AssistantStreamEnded():
         final draft = _drafts[event.attemptId];
@@ -340,17 +381,22 @@ class ChatTranscript {
         } else {
           draft.streaming = false;
         }
+        _items = null;
         return true;
       case ApprovalRequestedEvent(:final request):
         _approvals[request.eventId] = request;
         _durable = null;
+        _items = null;
         return true;
       case UserQuestionRequestedEvent(:final request):
         _questions[request.eventId] = request;
         return true;
       case HostRequestCancelledEvent(:final eventId):
         final removed = _approvals.remove(eventId) != null || _questions.remove(eventId) != null;
-        if (removed) _durable = null;
+        if (removed) {
+          _durable = null;
+          _items = null;
+        }
         return removed;
       case SessionStatusEvent(:final running):
         _runningOverride = running;
@@ -545,6 +591,10 @@ class _ToolBuilder {
   ApprovalOutcome? approvalOutcome;
   ToolResultEvent? result;
 
+  /// Last published item. Reused while none of the fields that feed the
+  /// renderable tool change, so an unrelated event cannot invalidate a row.
+  ToolChatItem? _built;
+
   ToolChatItem build(ApprovalRequest? pending) {
     final result = this.result;
     final ToolStatus status;
@@ -558,17 +608,30 @@ class _ToolBuilder {
     } else {
       status = ToolStatus.running;
     }
-    return ToolChatItem(
+    final parts = result?.message.parts ?? const <Part>[];
+    final failure = result?.failure;
+    final meta = result?.meta;
+    final cached = _built;
+    if (cached != null &&
+        cached.status == status &&
+        cached.approvalOutcome == approvalOutcome &&
+        identical(cached.pendingApproval, pending) &&
+        identical(cached.failure, failure) &&
+        identical(cached.meta, meta) &&
+        identical(cached.resultParts, parts)) {
+      return cached;
+    }
+    return _built = ToolChatItem(
       callId: callId,
       name: name,
       arguments: arguments,
       status: status,
       seq: seq,
-      resultParts: result?.message.parts ?? const [],
-      failure: result?.failure,
+      resultParts: parts,
+      failure: failure,
       approvalOutcome: approvalOutcome,
       pendingApproval: pending,
-      meta: result?.meta,
+      meta: meta,
     );
   }
 }
@@ -591,9 +654,22 @@ class _Draft {
   final int startedAfterSeq;
   final SplayTreeMap<int, _DraftBlock> blocks = SplayTreeMap();
   int nextIndex = 0;
-  bool streaming = true;
+
+  bool _streaming = true;
+  bool get streaming => _streaming;
+  set streaming(bool value) {
+    if (_streaming == value) return;
+    _streaming = value;
+    _itemsCache = null;
+  }
+
+  /// Last published projection; only a chunk/stream mutation or a row-key
+  /// change (a durable message took over the step) replaces it.
+  List<ChatItem>? _itemsCache;
+  bool? _cachedUseRowKey;
 
   void apply(StreamChunk chunk) {
+    _itemsCache = null;
     switch (chunk) {
       case BlockStartChunk(:final blockIndex, :final blockType):
         blocks[blockIndex] = _DraftBlock(blockType);
@@ -619,6 +695,8 @@ class _Draft {
   String get rowKey => 'm$turn.$step';
 
   List<ChatItem> items({required bool useRowKey}) {
+    final cached = _itemsCache;
+    if (cached != null && _cachedUseRowKey == useRowKey) return cached;
     final text = StringBuffer();
     final reasoning = StringBuffer();
     final tools = <ChatItem>[];
@@ -660,17 +738,19 @@ class _Draft {
           );
       }
     }
-    return [
+    final result = [
       if (text.isNotEmpty || reasoning.isNotEmpty)
         AssistantChatItem(
           id: 'd$attemptId',
           rowKey: useRowKey ? rowKey : null,
           text: text.toString(),
           reasoning: reasoning.toString(),
-          streaming: streaming,
+          streaming: _streaming,
         ),
       ...tools,
     ];
+    _cachedUseRowKey = useRowKey;
+    return _itemsCache = result;
   }
 }
 

@@ -13,10 +13,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import 'agent_selection_state.dart';
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
@@ -287,12 +289,20 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
   String _key = '';
   Future<void> _loading = Future.value();
 
-  /// Preferences key of [host]'s view.
-  static String keyFor(HostRef host) => 'workspaces.${host.kind.name}.${host.id}';
+  /// Preferences key of [host]'s view for [agent]. The Agent is part of the
+  /// key: each Agent keeps its own selected workspace, pins and groups, so
+  /// switching never shows a workspace the target Agent does not have (and
+  /// switching back restores exactly what was there).
+  static String keyFor(HostRef host, {RemoteAgent agent = RemoteAgent.dsh}) =>
+      'workspaces.${host.kind.name}.${host.id}.${agent.code}';
 
   @override
   WorkspacePrefs build() {
-    final key = keyFor(ref.watch(activeHostProvider));
+    final host = ref.watch(activeHostProvider);
+    final agent = host.kind == HostKind.relay
+        ? ref.watch(agentSelectionProvider.select((s) => s.forHost(host.id)))
+        : RemoteAgent.dsh;
+    final key = keyFor(host, agent: agent);
     _key = key;
     _loading = _load(key);
     return const WorkspacePrefs();

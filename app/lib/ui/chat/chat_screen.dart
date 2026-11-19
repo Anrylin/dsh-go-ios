@@ -15,6 +15,7 @@ import '../../notify/chat_alerts.dart' show approvalText, questionText;
 import '../../runtime/local_footprint.dart' show RuntimeMissing;
 import '../../runtime/runtime_bridge.dart' show RuntimePhase;
 import '../../runtime/runtime_state.dart' show localRuntimeProvider;
+import '../../state/agent_capabilities_state.dart';
 import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/attachments.dart';
 import '../../state/balance_state.dart';
@@ -1297,6 +1298,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final sessionId = ref.watch(currentSessionProvider);
     final connAsync = ref.watch(activeConnectionProvider);
     final conn = connAsync.value;
+    // 会话详情 is the native Harness's own session report (progress, subagents,
+    // jobs); a CodeX or AGY conversation has no such page.
+    final detailCaps = ref.watch(agentCapabilitiesProvider);
     final connected = conn != null;
     final local = ref.watch(activeHostProvider.select((h) => h.kind == HostKind.local));
     final starting = local && ref.watch(localRuntimeProvider.select((s) => s.status.phase == RuntimePhase.starting));
@@ -1615,7 +1619,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               },
                         // The title pill opens the whole session's details (on a
                         // wide window it folds and unfolds the panel beside us).
-                        onTitleTap: sessionId == null
+                        onTitleTap: sessionId == null || !detailCaps.sessionDetail
                             ? null
                             : () => SessionDetailPage.open(context, sessionId, toggle: true),
                         trailing: ModelChip(

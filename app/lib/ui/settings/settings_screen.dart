@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,7 @@ import '../../l10n/l10n.dart';
 import '../../runtime/local_footprint.dart';
 import '../../runtime/runtime_state.dart';
 import '../../state/account_state.dart';
+import '../../state/agent_capabilities_state.dart';
 import '../../state/android_features.dart';
 import '../../state/ask_ai.dart' show askAiAvailableProvider;
 import '../../state/balance_state.dart';
@@ -128,6 +130,12 @@ class SettingsScreen extends ConsumerWidget {
     final update = ref.watch(appUpdateProvider);
     final newVersion = update.hasUpdate && !update.isSkipped;
 
+    // 设置's agent sections configure the native DSH Harness (providers,
+    // permissions, persona, plugins, web search, media). A CodeX or AGY
+    // connection gets its models and tools from its own backend, so those
+    // sections are not offered there; app-level settings stay.
+    final agentCaps = ref.watch(agentCapabilitiesProvider);
+    final nativeSettings = agentCaps.agent == RemoteAgent.dsh;
     final page = AppPage.list(
       title: l10n.commonSettings,
       children: [
@@ -140,71 +148,73 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
         const SettingsOverview(),
-        SettingsSection(
-          title: l10n.hubGroupAi,
-          children: [
-            SettingsTile(
-              icon: AppIcons.providers,
-              tint: SettingsHues.ai,
-              spot: SettingsIndex.entry(SettingsPageId.models),
-              onTap: () => _push(context, const ProvidersPage()),
-            ),
-            SettingsTile(
-              icon: AppIcons.permissions,
-              tint: SettingsHues.ai,
-              spot: SettingsIndex.entry(SettingsPageId.permission),
-              value: text(permission?.$1, color: permission?.$2 == true ? colors.warning : null),
-              onTap: () => _push(context, PermissionPage(sessionId: ref.read(currentSessionProvider))),
-            ),
-            SettingsTile(
-              icon: AppIcons.profile,
-              tint: SettingsHues.ai,
-              spot: SettingsIndex.entry(SettingsPageId.personalization),
-              value: text(prefs),
-              onTap: () => _push(context, const PersonalizationPage()),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: l10n.hubGroupCapabilities,
-          children: [
-            if (android)
+        if (nativeSettings)
+          SettingsSection(
+            title: l10n.hubGroupAi,
+            children: [
               SettingsTile(
-                icon: AppIcons.phoneControl,
-                tint: SettingsHues.abilities,
-                spot: SettingsIndex.entry(SettingsPageId.phone),
-                value: text(phoneValue, color: phoneValue == l10n.hubValueOneStep ? colors.warning : null),
-                onTap: () => _push(context, const PhoneControlScreen()),
+                icon: AppIcons.providers,
+                tint: SettingsHues.ai,
+                spot: SettingsIndex.entry(SettingsPageId.models),
+                onTap: () => _push(context, const ProvidersPage()),
               ),
-            SettingsTile(
-              icon: AppIcons.webSearch,
-              tint: SettingsHues.abilities,
-              spot: SettingsIndex.entry(SettingsPageId.webSearch),
-              value: text(newApi == null ? null : (newApi ? l10n.engineSearchNewApiBadge : l10n.commonDefault)),
-              onTap: () => _push(context, const WebSearchSettingsPage()),
-            ),
-            SettingsTile(
-              icon: AppIcons.generateMedia,
-              tint: SettingsHues.abilities,
-              spot: SettingsIndex.entry(SettingsPageId.media),
-              onTap: () => _push(context, const MediaSettingsPage()),
-            ),
-            SettingsTile(
-              icon: AppIcons.plugin,
-              tint: SettingsHues.abilities,
-              spot: SettingsIndex.entry(SettingsPageId.plugins),
-              value: plugins == null || plugins == 0
-                  ? null
-                  : Text(
-                      l10n.hubValuePlugins(plugins),
-                      style: AppType.tabular(Theme.of(context).textTheme.bodyMedium!),
-                    ),
-              onTap: () => _push(context, const PluginsScreen()),
-            ),
-            // The plugins' own settings sections, when the host has any.
-            ...pluginSettingsTiles(ref, tint: SettingsHues.abilities),
-          ],
-        ),
+              SettingsTile(
+                icon: AppIcons.permissions,
+                tint: SettingsHues.ai,
+                spot: SettingsIndex.entry(SettingsPageId.permission),
+                value: text(permission?.$1, color: permission?.$2 == true ? colors.warning : null),
+                onTap: () => _push(context, PermissionPage(sessionId: ref.read(currentSessionProvider))),
+              ),
+              SettingsTile(
+                icon: AppIcons.profile,
+                tint: SettingsHues.ai,
+                spot: SettingsIndex.entry(SettingsPageId.personalization),
+                value: text(prefs),
+                onTap: () => _push(context, const PersonalizationPage()),
+              ),
+            ],
+          ),
+        if (nativeSettings)
+          SettingsSection(
+            title: l10n.hubGroupCapabilities,
+            children: [
+              if (android)
+                SettingsTile(
+                  icon: AppIcons.phoneControl,
+                  tint: SettingsHues.abilities,
+                  spot: SettingsIndex.entry(SettingsPageId.phone),
+                  value: text(phoneValue, color: phoneValue == l10n.hubValueOneStep ? colors.warning : null),
+                  onTap: () => _push(context, const PhoneControlScreen()),
+                ),
+              SettingsTile(
+                icon: AppIcons.webSearch,
+                tint: SettingsHues.abilities,
+                spot: SettingsIndex.entry(SettingsPageId.webSearch),
+                value: text(newApi == null ? null : (newApi ? l10n.engineSearchNewApiBadge : l10n.commonDefault)),
+                onTap: () => _push(context, const WebSearchSettingsPage()),
+              ),
+              SettingsTile(
+                icon: AppIcons.generateMedia,
+                tint: SettingsHues.abilities,
+                spot: SettingsIndex.entry(SettingsPageId.media),
+                onTap: () => _push(context, const MediaSettingsPage()),
+              ),
+              SettingsTile(
+                icon: AppIcons.plugin,
+                tint: SettingsHues.abilities,
+                spot: SettingsIndex.entry(SettingsPageId.plugins),
+                value: plugins == null || plugins == 0
+                    ? null
+                    : Text(
+                        l10n.hubValuePlugins(plugins),
+                        style: AppType.tabular(Theme.of(context).textTheme.bodyMedium!),
+                      ),
+                onTap: () => _push(context, const PluginsScreen()),
+              ),
+              // The plugins' own settings sections, when the host has any.
+              ...pluginSettingsTiles(ref, tint: SettingsHues.abilities),
+            ],
+          ),
         SettingsSection(
           title: l10n.hubSettingsAppearance,
           children: [

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../state/agent_capabilities_state.dart';
 import '../../../state/drawer_view_state.dart';
 import '../../../state/workspaces_state.dart';
 import '../../../state/session_deletion_state.dart';
@@ -205,10 +206,18 @@ class SelectionActionBar extends ConsumerWidget {
               onTap: none || !canPin || busy ? null : onPin,
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ActionKey(icon: AppIcons.archive, label: l10n.shellArchive, onTap: none || busy ? null : onArchive),
-          ),
+          // 归档 is native DSH only; the batch bar drops it for CodeX/AGY
+          // instead of offering an action those endpoints cannot perform.
+          if (ref.watch(agentCapabilitiesProvider).archive) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: _ActionKey(
+                icon: AppIcons.archive,
+                label: l10n.shellArchive,
+                onTap: none || busy ? null : onArchive,
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           Expanded(
             child: Tooltip(
