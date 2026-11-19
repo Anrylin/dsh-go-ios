@@ -14096,6 +14096,12 @@ class L10nZh extends L10n {
   String get searchKwUsageStats => '统计,使用统计,匿名,隐私,数据,改进,遥测,分析';
 
   @override
+  String get searchKwDebugLogAutoSend => '自动,发送,调试,日志,上传,遥测';
+
+  @override
+  String get searchKwDebugLogExport => '导出,调试,日志,诊断包,分享,下载';
+
+  @override
   String get searchKwQuickPanel => '左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口';
 
   @override
@@ -16639,6 +16645,18 @@ class L10nZh extends L10n {
 
   @override
   String get usageStatsFooter => '只含使用次数、版本和手机品牌，不含对话、文件和账号。';
+
+  @override
+  String get debugLogAutoSendTitle => '自动发送调试日志';
+
+  @override
+  String get debugLogAutoSendHint => '当前仅保存开关状态，不会自动上传。';
+
+  @override
+  String get debugLogExportTitle => '导出调试日志';
+
+  @override
+  String get debugLogExportHint => '生成诊断包 ZIP，可分享或存到下载。';
 
   @override
   String get usageNoticeBody => '不含对话和个人信息，可随时关闭';

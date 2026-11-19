@@ -17,9 +17,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import 'account_state.dart';
 import 'agent_selection_state.dart';
 import 'bots_state.dart';
 import 'hosts_state.dart';
+import 'offline_session_cache.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
 import 'session_attention_state.dart';
@@ -525,12 +527,25 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
   final registry = ref.watch(workspacesProvider);
   final registryCurrent = cache.current(registry, identity, connection?.client);
   final workspace = ref.watch(selectedWorkspaceProvider);
-  final key = prefs.loaded
-      ? readListKey(identity, ReadListKind.sessions, prefs.selected == null ? 'all' : 'workspace:${prefs.selected}')
+  final host = ref.watch(activeHostProvider);
+  final account = ref.watch(accountProvider.select((s) => s.profile?.id)) ?? 'local';
+  final agent = host.kind == HostKind.relay ? ref.watch(activeAgentProvider) : RemoteAgent.dsh;
+  final scopeId = host.kind == HostKind.relay ? '${host.id}:${agent.code}' : host.id;
+  final offlineHostId = '$account|$scopeId';
+  final workspaceKey = prefs.selected == null ? 'all' : 'workspace:${prefs.selected}';
+  // Offline is a normal state, not a loading state: paint the last confirmed
+  // list read-only instead of leaving the Drawer on a skeleton.
+  final offlineMode = connection == null;
+  final offline = offlineMode
+      ? OfflineSessionCache.instance.read(offlineHostId, workspaceKey) ??
+          (workspaceKey == 'all' ? null : OfflineSessionCache.instance.read(offlineHostId, 'all'))
       : null;
-  final validSource = all != null && cache.current(all, identity, connection?.client);
+  final key = prefs.loaded
+      ? readListKey(identity, ReadListKind.sessions, workspaceKey)
+      : null;
+  final validSource = !offlineMode && all != null && cache.current(all, identity, connection.client);
   final activity = cache.refresh(ReadListKind.sessions, identity, all);
-  final readOnly = sessions.isLoading || sessions.hasError || activity?.pending == true || activity?.failed == true;
+  final readOnly = offlineMode || sessions.isLoading || sessions.hasError || activity?.pending == true || activity?.failed == true;
   final status = sessions.hasError || activity?.failed == true
       ? ReadListStatus.failed
       : connection == null
@@ -539,12 +554,13 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
   final pending = ref.watch(workspaceFilterPendingProvider);
   final workspaceKnown = prefs.selected == null || registryCurrent && registry.ready && workspace != null;
   if (!validSource || pending || !workspaceKnown || cache.origin(all) != null && !prefs.loaded) {
-    final cached = cache.get<CachedSessions>(key);
+    final cached = cache.get<CachedSessions>(key) ?? offline?.toCached();
     if (cached == null) return null;
     // Once a registry is known, deletion or a changed path/membership version
-    // invalidates the old projection. Offline, only the exact last confirmed
-    // selected workspace may be shown; never fall back to all sessions.
-    if (prefs.selected != null &&
+    // invalidates the old projection. An offline snapshot is deliberately the
+    // last confirmed view, so a changed folder version must not erase it.
+    if (offline == null &&
+        prefs.selected != null &&
         registryCurrent &&
         registry.ready &&
         (workspace == null || readWorkspaceVersion(workspace) != cached.workspaceVersion)) {
@@ -604,16 +620,17 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
         return result;
       }
     }
+    final snapshot = CachedSessions(
+      sessions: result.sessions,
+      bots: result.bots,
+      workspaceVersion: version,
+      scoped: result.scoped,
+      workspaceLabel: result.workspaceLabel,
+    );
     cache.put(
       key,
       all,
-      () => CachedSessions(
-        sessions: result.sessions,
-        bots: result.bots,
-        workspaceVersion: version,
-        scoped: result.scoped,
-        workspaceLabel: result.workspaceLabel,
-      ),
+      () => snapshot,
       // The registry can deliver an archive frame before SessionsController's
       // independent subscription. Include the actual visible membership, not
       // only the original list revision or selected workspace version.
@@ -623,6 +640,12 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
         [for (final row in result.sessions) row.sessionId],
         [for (final row in result.bots) row.sessionId],
       ]).digest,
+    );
+    // Keep the same confirmed view for cold starts and outages.
+    OfflineSessionCache.instance.remember(
+      hostId: offlineHostId,
+      workspace: workspaceKey,
+      sessions: snapshot,
     );
   }
   return result;

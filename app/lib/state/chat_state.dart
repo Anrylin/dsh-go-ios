@@ -466,6 +466,9 @@ class ChatController extends Notifier<ChatState> {
   MuxGeneration? _snapshotGeneration;
   bool _synchronized = false;
   bool _watchEnded = false;
+  Timer? _watchRetryTimer;
+  int _watchRetries = 0;
+  Object? _watchRetryClient;
   Completer<bool> _syncReady = Completer<bool>();
   Future<bool>? _resyncFuture;
   Object? _resyncOwner;
@@ -605,6 +608,7 @@ class ChatController extends Notifier<ChatState> {
       _flush = null;
       _stopTimeout?.cancel();
       _awayTimer?.cancel();
+      _watchRetryTimer?.cancel();
       unawaited(_sub?.cancel());
       unawaited(_states?.cancel());
     });
@@ -844,6 +848,18 @@ class ChatController extends Notifier<ChatState> {
     return false;
   }
 
+  /// A host-level retry does not create a new mux connection, so a follow that
+  /// already ended stays ended until this ChatController asks for a new one.
+  /// Keep the painted transcript; only the transport flags are cleared.
+  void clearTransportFailure() {
+    final client = _client;
+    if (client == null) return;
+    _watchRetryClient = client;
+    _watchRetries = 0;
+    state = state.copyWith(clearError: true, streamLost: false, syncing: true, loading: false);
+    unawaited(resync());
+  }
+
   /// Reopens the actual follow, even when the mux itself never disconnected.
   /// Deduplicated and bounded; only an applied fresh snapshot is success.
   Future<bool> resync() {
@@ -890,6 +906,7 @@ class ChatController extends Notifier<ChatState> {
     final owner = ref;
     final listener = _listenOwner = Object();
     _watchEnded = false;
+    _watchRetryTimer?.cancel();
     bool current() => owner.mounted && identical(listener, _listenOwner) && identical(client, _client);
     if (!_syncReady.isCompleted) _syncReady.complete(false);
     _syncReady = Completer<bool>();
@@ -924,12 +941,21 @@ class ChatController extends Notifier<ChatState> {
               _markSyncing();
             }
             if (event is SessionSnapshotEvent) {
-              if (!identical(event.followEpoch, _followEpoch) || !(event.followEpoch?.isCurrent ?? true)) return;
+              if (!identical(event.followEpoch, _followEpoch) ||
+                  !(event.followEpoch?.isCurrent ?? true)) {
+                // A queued snapshot from a retired follow cannot satisfy this
+                // screen. Ask for a fresh one instead of waiting forever.
+                unawaited(resync());
+                return;
+              }
               // Recheck at delivery, not only when watch() emitted the frame.
               // A queued old snapshot cannot adopt a newer (or null) mux.
               if (event.followEpoch case final epoch?) {
                 final generation = client.mux.generation;
-                if (generation == null || !identical(epoch.generation, generation)) return;
+                if (generation == null || !identical(epoch.generation, generation)) {
+                  unawaited(resync());
+                  return;
+                }
               }
             }
             _trackClock(event);
@@ -1007,11 +1033,13 @@ class ChatController extends Notifier<ChatState> {
               }
               return;
             }
+            _watchEnded = true;
             state = state.copyWith(
               error: chatErrorText(e, action: appL10n.stateChatSyncInterrupted),
               streamLost: true,
               loading: false,
             );
+            _scheduleWatchRetry(client, pulse, current);
           },
           onDone: () {
             if (!current()) return;
@@ -1019,8 +1047,27 @@ class ChatController extends Notifier<ChatState> {
             _markSyncing();
             if (!_syncReady.isCompleted) _syncReady.complete(false);
             state = state.copyWith(streamLost: true, loading: false);
+            _scheduleWatchRetry(client, pulse, current);
           },
         );
+  }
+
+  /// A stream can end without the mux ever leaving `connected`; relying only on
+  /// a mux transition leaves one conversation permanently red until the app is
+  /// killed. Two short, bounded retries cover that case without spinning.
+  void _scheduleWatchRetry(DshClient client, RunPulse pulse, bool Function() current) {
+    if (!identical(_watchRetryClient, client)) {
+      _watchRetryClient = client;
+      _watchRetries = 0;
+    }
+    if (_watchRetries >= 2) return;
+    _watchRetries++;
+    _watchRetryTimer?.cancel();
+    _watchRetryTimer = Timer(const Duration(milliseconds: 400), () {
+      if (!current() || !_watchEnded) return;
+      state = state.copyWith(clearError: true, streamLost: false);
+      _listen(client, pulse);
+    });
   }
 
   Set<String> _inboxIds() => {for (final q in _transcript.inbox) ?q.requestId};

@@ -25820,6 +25820,18 @@ abstract class L10n {
   /// **'统计,使用统计,匿名,隐私,数据,改进,遥测,分析'**
   String get searchKwUsageStats;
 
+  /// No description provided for @searchKwDebugLogAutoSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动,发送,调试,日志,上传,遥测'**
+  String get searchKwDebugLogAutoSend;
+
+  /// No description provided for @searchKwDebugLogExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出,调试,日志,诊断包,分享,下载'**
+  String get searchKwDebugLogExport;
+
   /// No description provided for @searchKwQuickPanel.
   ///
   /// In zh, this message translates to:
@@ -30433,6 +30445,30 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'只含使用次数、版本和手机品牌，不含对话、文件和账号。'**
   String get usageStatsFooter;
+
+  /// No description provided for @debugLogAutoSendTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动发送调试日志'**
+  String get debugLogAutoSendTitle;
+
+  /// No description provided for @debugLogAutoSendHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前仅保存开关状态，不会自动上传。'**
+  String get debugLogAutoSendHint;
+
+  /// No description provided for @debugLogExportTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出调试日志'**
+  String get debugLogExportTitle;
+
+  /// No description provided for @debugLogExportHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'生成诊断包 ZIP，可分享或存到下载。'**
+  String get debugLogExportHint;
 
   /// No description provided for @usageNoticeBody.
   ///

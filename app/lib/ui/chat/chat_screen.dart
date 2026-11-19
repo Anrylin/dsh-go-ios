@@ -1232,10 +1232,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   /// The engine could not be reached: try again.
   void _reconnect() {
     final host = ref.read(activeHostProvider);
+    final sessionId = ref.read(currentSessionProvider);
     if (host.kind == HostKind.local) {
       ref.invalidate(localConnectionProvider);
     } else {
       ref.read(remoteConnectionProvider(host).notifier).retry();
+    }
+    // A host retry does not necessarily emit a fresh mux `connected` frame.
+    // Clear this conversation's stuck watch as well, or only this chat stays
+    // red while every other one works.
+    if (sessionId != null) {
+      ref.read(chatProvider(sessionId).notifier).clearTransportFailure();
     }
   }
 

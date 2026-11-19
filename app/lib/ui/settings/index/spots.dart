@@ -955,6 +955,18 @@ abstract final class Spots {
     keywords: (l) => l.searchKwUsageStats,
     link: 'usage-stats',
   );
+  static final debugLogAutoSend = SettingSpot(
+    'debug-log-auto-send',
+    page: SettingsPageId.privacy,
+    title: (l) => l.debugLogAutoSendTitle,
+    keywords: (l) => l.searchKwDebugLogAutoSend,
+  );
+  static final debugLogExport = SettingSpot(
+    'debug-log-export',
+    page: SettingsPageId.privacy,
+    title: (l) => l.debugLogExportTitle,
+    keywords: (l) => l.searchKwDebugLogExport,
+  );
   static final chatLogUpload = SettingSpot(
     'chat-log-upload',
     page: SettingsPageId.privacy,
@@ -1126,6 +1138,8 @@ final _rows = <SettingSpot>[
   Spots.notifySystem,
   Spots.shareConfig,
   Spots.usageStats,
+  Spots.debugLogAutoSend,
+  Spots.debugLogExport,
   Spots.chatLogUpload,
   Spots.autoStart,
   Spots.autoSafe,

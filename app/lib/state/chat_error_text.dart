@@ -13,7 +13,7 @@ String chatErrorText(Object error, {required String action}) {
       'session/agent-busy' => appL10n.stateChatAgentBusy,
       'session/writer-held' => appL10n.stateChatWriterHeld,
       'session/model-unavailable' || 'session/provider-models-unavailable' => appL10n.stateChatModelUnavailable,
-      'session/attachment-invalid' => appL10n.stateChatAttachmentInvalid,
+      'session/attachment-invalid' || 'attachment-error' => appL10n.stateChatAttachmentInvalid,
       'session/fork-unavailable' => appL10n.stateChatForkUnavailable,
       'FRAME_TOO_LARGE' => appL10n.stateChatImagesTooLarge,
       _ => engineErrorReason(error),

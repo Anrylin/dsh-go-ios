@@ -14812,6 +14812,12 @@ class L10nEn extends L10n {
   String get searchKwUsageStats => 'statistics,stats,usage data,analytics,telemetry,anonymous,privacy,data';
 
   @override
+  String get searchKwDebugLogAutoSend => 'auto,send,debug,logs,upload,telemetry';
+
+  @override
+  String get searchKwDebugLogExport => 'export,debug,logs,diagnostics,bundle,share,download';
+
+  @override
   String get searchKwQuickPanel => 'swipe,left swipe,shortcuts,gesture,quick panel,quick access';
 
   @override
@@ -17542,6 +17548,18 @@ class L10nEn extends L10n {
 
   @override
   String get usageStatsFooter => 'Only usage counts, versions and the phone’s maker. Never chats, files or accounts.';
+
+  @override
+  String get debugLogAutoSendTitle => 'Auto-send debug logs';
+
+  @override
+  String get debugLogAutoSendHint => 'Only saves the switch for now; nothing is uploaded.';
+
+  @override
+  String get debugLogExportTitle => 'Export debug logs';
+
+  @override
+  String get debugLogExportHint => 'Creates a diagnostics ZIP you can share or save to Downloads.';
 
   @override
   String get usageNoticeBody => 'No chats or personal info.\nTurn off anytime.';

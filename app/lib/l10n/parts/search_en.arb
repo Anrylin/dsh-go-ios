@@ -114,5 +114,7 @@
   "searchKwWebBusySend": "send,queue,while AI works",
   "searchKwPluginsMarket": "plugin market,install plugins,marketplace",
   "searchKwUsageStats": "statistics,stats,usage data,analytics,telemetry,anonymous,privacy,data",
+  "searchKwDebugLogAutoSend": "auto,send,debug,logs,upload,telemetry",
+  "searchKwDebugLogExport": "export,debug,logs,diagnostics,bundle,share,download",
   "searchKwQuickPanel": "swipe,left swipe,shortcuts,gesture,quick panel,quick access"
 }
