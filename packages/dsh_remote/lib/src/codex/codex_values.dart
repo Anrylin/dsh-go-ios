@@ -36,7 +36,10 @@ class CodexValueError implements Exception {
 /// Harness. Verbatim text: `The selected Session does not belong to CodeX.`
 String codexNativeThreadId(String sessionId) {
   if (!sessionId.startsWith(codexSessionPrefix) || sessionId.length == codexSessionPrefix.length) {
-    throw const CodexValueError('The selected Session does not belong to CodeX.');
+    throw const CodexValueError(
+      'The selected Session does not belong to CodeX.',
+      'FEATURE_NOT_SUPPORTED',
+    );
   }
   return sessionId.substring(codexSessionPrefix.length);
 }

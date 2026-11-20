@@ -237,7 +237,27 @@ int _codexWorkspaceTime(Object? value) {
   return codexNormalizeTime(value);
 }
 
+/// Loads both the live and the archived thread inventories. `thread/list` is
+/// filtered by `archived`; requesting only `archived: false` hides every
+/// already-archived Session from `workspace/list`, from the drawer's archived
+/// bin and from the baseline `archived` frame. Merge both pages here so the
+/// catalog is the single source of truth for archive state.
 Future<({List<JsonMap> threads, bool complete})> _loadCodexThreads(CodexAppApi api) async {
+  final live = await _loadCodexThreadPages(api, archived: false);
+  final archived = await _loadCodexThreadPages(api, archived: true);
+  final seenIds = <String>{};
+  final threads = <JsonMap>[];
+  for (final thread in <JsonMap>[...live.threads, ...archived.threads]) {
+    final id = codexString(thread['id']);
+    if (id != null && seenIds.add(id)) threads.add(thread);
+  }
+  return (threads: threads, complete: live.complete && archived.complete);
+}
+
+Future<({List<JsonMap> threads, bool complete})> _loadCodexThreadPages(
+  CodexAppApi api, {
+  required bool archived,
+}) async {
   final threads = <JsonMap>[];
   final seenIds = <String>{};
   final seenCursors = <String>{};
@@ -248,7 +268,7 @@ Future<({List<JsonMap> threads, bool complete})> _loadCodexThreads(CodexAppApi a
       'limit': _codexPageLimit,
       'sortKey': 'updated_at',
       'sortDirection': 'desc',
-      'archived': false,
+      'archived': archived,
       if (cursor != null) 'cursor': cursor,
     }));
     for (final value in codexArray(result['data'])) {

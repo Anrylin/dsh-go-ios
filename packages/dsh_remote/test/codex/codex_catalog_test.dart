@@ -351,10 +351,11 @@ void main() {
 
       final catalog = await codexLoadCatalog(api);
 
-      // Two calls: the initial page, then the page reached by the repeated
-      // cursor. The old loop would have issued 32 requests.
+      // Two calls per filter: the initial page, then the page reached by the
+      // repeated cursor. Catalog loading now reads both archived=false and
+      // archived=true, so thread/list is issued four times total.
       expect(api.projectCalls, 2);
-      expect(api.threadCalls, 2);
+      expect(api.threadCalls, 4);
       expect(catalog.projectsComplete, isFalse);
       expect(catalog.threadsComplete, isFalse);
       expect(catalog.workspaces, hasLength(1));

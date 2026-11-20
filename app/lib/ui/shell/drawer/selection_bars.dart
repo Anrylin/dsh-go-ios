@@ -206,8 +206,9 @@ class SelectionActionBar extends ConsumerWidget {
               onTap: none || !canPin || busy ? null : onPin,
             ),
           ),
-          // 归档 is native DSH only; the batch bar drops it for CodeX/AGY
-          // instead of offering an action those endpoints cannot perform.
+          // CodeX archives through its virtual Harness; AGY has no archive
+          // endpoint, so the batch bar drops it there instead of offering an
+          // action that Agent cannot perform.
           if (ref.watch(agentCapabilitiesProvider).archive) ...[
             const SizedBox(width: 8),
             Expanded(
