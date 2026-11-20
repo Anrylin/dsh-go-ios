@@ -17278,6 +17278,14 @@ class L10nEn extends L10n {
   String get statsCache => 'cache';
 
   @override
+  String statsAvgRate(String rate) {
+    return 'avg $rate tok/s';
+  }
+
+  @override
+  String get statsRateSettled => 'output finished; showing the last rate';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

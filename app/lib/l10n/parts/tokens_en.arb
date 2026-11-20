@@ -17,5 +17,14 @@
       }
     }
   },
-  "statsCache": "cache"
+  "statsCache": "cache",
+  "statsAvgRate": "avg {rate} tok/s",
+  "@statsAvgRate": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "statsRateSettled": "output finished; showing the last rate"
 }

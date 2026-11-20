@@ -195,13 +195,35 @@ class RunPulse extends ChangeNotifier {
   double _scale = 1;
 
   double _tps = 0;
+
+  /// 最后一次非零的速度。停着不清零——跑完立刻变空会让人以为坏了。
+  double _lastTps = 0;
+
+  /// 现在显示的速度是不是一段已经结束的输出留下的最后速率（界面据此打勾）。
+  bool _rateSettled = false;
+
+  /// 新一轮/快照后先收起勾；等这次真的吐出 token 才重新允许定格，
+  /// 否则上一轮留下的速率会在新一轮等首字时被错误地打上勾。
+  bool _settleArmed = true;
+
+  /// 当前在吐字的 attempt；只有它的 commit end 才能给这一轮打勾。
+  String? _activeAttempt;
+  int _activeRevision = -1;
   DateTime? _compactingSince;
 
   /// 鲸尾档位 1–4。
   int get level => gauge.level;
 
-  /// 最近一次算出的速度(token/秒,已校准);停着为 0。
+  /// 最近一次算出的实时速度(token/秒,已校准);停着为 0。
+  ///
+  /// 鲸尾、step 详情等关心「现在有没有在吐字」的地方用这个。
   double get tokensPerSecond => _tps;
+
+  /// 统计行显示的速度:跑着是实时值,停下来保留最后一次的值。
+  double get displayTps => _tps > 0 ? _tps : _lastTps;
+
+  /// [displayTps] 定格成一段已结束输出的最后速率（而不是实时值）时为 true。
+  bool get rateSettled => _rateSettled && displayTps > 0;
 
   /// 正在压缩上下文时为开始时刻(Host 时间)。
   DateTime? get compactingSince => _compactingSince;
@@ -210,15 +232,28 @@ class RunPulse extends ChangeNotifier {
   /// 再到也不会被当成一阵猛冲),未知时按到达时刻计。
   void observe(DshEvent event, {Duration? skew}) {
     switch (event) {
-      case AssistantChunkEvent(:final attemptId, :final index, :final chunk):
+      case AssistantStreamStarted(:final attemptId, :final revision):
+        _activeAttempt = attemptId;
+        _activeRevision = revision;
+        _clearRateSettled(disarm: true);
+      case AssistantChunkEvent(:final attemptId, :final revision, :final index, :final chunk):
+        _activeAttempt ??= attemptId;
+        if (_activeRevision < 0) _activeRevision = revision;
         final next = _nextIndex[attemptId] ?? 0;
         if (index < next) return;
         _nextIndex[attemptId] = index + 1;
         _chunk(attemptId, chunk, event.time, skew);
-      case AssistantStreamEnded(:final attemptId):
+      case AssistantStreamEnded(:final attemptId, :final revision, :final committed):
+        // 乱序到达的旧 attempt / 旧 revision / 被丢弃的草稿都不能给新流打勾。
+        if (attemptId != _activeAttempt || revision < _activeRevision) return;
+        _activeAttempt = null;
+        if (committed) _settleRate();
         _nextIndex.remove(attemptId);
         _attemptEstimate.remove(attemptId);
       case SessionSnapshotEvent(:final events, :final isResync):
+        _activeAttempt = null;
+        _activeRevision = -1;
+        _clearRateSettled(disarm: true);
         if (!isResync) {
           _nextIndex.clear();
           _attemptEstimate.clear();
@@ -248,6 +283,9 @@ class RunPulse extends ChangeNotifier {
     if (text == null || text.isEmpty) return;
     final tokens = estimateTokens(text);
     if (tokens <= 0) return;
+    // 又有字出来了：速度重新是实时值，勾先收起来，并允许下次再定格。
+    _settleArmed = true;
+    _clearRateSettled();
     _attemptEstimate[attempt] = (_attemptEstimate[attempt] ?? 0) + tokens;
     _estimatedOutput += tokens.ceil();
     final now = _clock();
@@ -267,9 +305,31 @@ class RunPulse extends ChangeNotifier {
   void _update() {
     final now = _clock();
     _tps = meter.rateAt(now) * _scale;
+    if (_tps > 0) {
+      _lastTps = _tps;
+    } else {
+      // 安静太久(没有 stream-end 事件时也走得通):把速度定格。
+      _settleRate();
+    }
     final before = gauge.level;
     if (gauge.update(_tps, now) != before) _notify();
     if (gauge.level == 1 && meter.lastAt == null) _stopTimer();
+  }
+
+  /// 一段输出结束了：保留最后的速率，统计行在它右边打勾。
+  /// 这只是滑窗最后一次采样的值，不是「本段平均」，界面文案照实说。
+  void _settleRate() {
+    if (!_settleArmed || _lastTps <= 0 || _rateSettled) return;
+    _rateSettled = true;
+    _notify();
+  }
+
+  /// 收起勾；新一轮开始或快照到来时同时解除武装，避免旧速率被再次打勾。
+  void _clearRateSettled({bool disarm = false}) {
+    if (disarm) _settleArmed = false;
+    if (!_rateSettled) return;
+    _rateSettled = false;
+    _notify();
   }
 
   /// 计时器的一拍(测试直接调用)。
@@ -340,6 +400,31 @@ DateTime? compactingAfter(Iterable<SessionLogEvent> events, DateTime? current, b
     }
   }
   return since;
+}
+
+/// 已完成输出的整段平均输出速度（token/秒）。
+///
+/// 和 DSH 自己统计行同一把尺子:输出 token ÷ 解码耗时(每个模型步从首字到
+/// 结束,不含排队和等首字)。各步先分别累加再相除；只数已经收尾的模型步——
+/// 正在跑的那一步没有完整分母，计进来读数会来回跳（这不是估算器）。
+/// 每步沿用 `TraceSpan.tokensPerSecond` 的 200ms 最短解码窗口，
+/// 太短的步直接跳过，算不出来返回 null。
+double? conversationTokensPerSecond(Iterable<dsh.TurnTrace> turns) {
+  var tokens = 0;
+  var ms = 0;
+  for (final turn in turns) {
+    for (final span in turn.spans) {
+      if (span.kind != dsh.TraceKind.model || span.end == null) continue;
+      final spanRate = span.tokensPerSecond;
+      final usage = span.usage;
+      final decoding = span.decoding;
+      if (spanRate == null || usage == null || decoding == null) continue;
+      tokens += usage.outputTokens;
+      ms += decoding.inMilliseconds;
+    }
+  }
+  if (tokens <= 0 || ms < 200) return null;
+  return tokens / (ms / 1000);
 }
 
 /// 每个会话一个 [RunPulse];[ChatController] 喂数据,活动条读。
