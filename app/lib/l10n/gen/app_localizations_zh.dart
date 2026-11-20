@@ -7107,6 +7107,9 @@ class L10nZh extends L10n {
   String get hubSessionPlanHint => 'AI 先出方案，不改文件';
 
   @override
+  String get hubSessionPlanModeUnavailable => '这个引擎不支持计划模式';
+
+  @override
   String get hubSessionTodos => '待办';
 
   @override
@@ -15448,6 +15451,18 @@ class L10nZh extends L10n {
 
   @override
   String get stateChatAgentBusy => 'AI 正忙，稍后再试';
+
+  @override
+  String get stateChatCodexThreadBusy => '另一端正在操作这个 Codex 对话，等它结束后会自动重试';
+
+  @override
+  String get stateChatCodexUnavailable => 'CodeX 暂时用不了，稍后再试';
+
+  @override
+  String get stateChatInvalidRequest => '这次请求的内容引擎没看懂，换个说法再试';
+
+  @override
+  String get stateChatWorkspaceMissing => '这个工作区已经不在了';
 
   @override
   String get stateChatWriterHeld => '这个对话正在别处使用';

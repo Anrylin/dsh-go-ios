@@ -92,6 +92,11 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
 
   String? lastOpenedSessionId;
 
+  /// Observes the exact payload a client sent to a virtual endpoint. Production
+  /// leaves this unset; tests use it to prove what `SessionApi` actually put on
+  /// the wire (virtual endpoints never reach `codex.app.call`).
+  void Function(String endpoint, Map<String, Object?> payload)? onDispatch;
+
   @override
   final Map<String, Object?> pendingRequestIds = <String, Object?>{};
 
@@ -629,6 +634,7 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
   /// Dispatches a virtual endpoint, delegating host-owned endpoints to the
   /// original carrier. The returned RpcResult is what the mux expects.
   Future<RpcResult> dispatch(String endpoint, Map<String, Object?> payload) async {
+    onDispatch?.call(endpoint, payload);
     if (codexIsHostWorkspaceEndpoint(endpoint)) {
       return hostCarrier.call(endpoint, payload);
     }
@@ -1122,17 +1128,36 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
     ];
   }
 
+  /// The attachments a `commands/execute` request carried.
+  ///
+  /// The composer sends `submittedAttachments` (`SessionApi.executeCommand`),
+  /// while this endpoint used to insist on `images` and throw before it even
+  /// looked at the command name — which failed every slash command under CodeX,
+  /// `/permission` included, with "The CodeX command image list is required."
+  /// Accept both spellings; a request that carries neither simply has none.
+  static List<Object?> _commandAttachments(JsonMap args) {
+    for (final key in const ['submittedAttachments', 'images']) {
+      final value = args[key];
+      if (value is List) return value;
+    }
+    return const <Object?>[];
+  }
+
   Future<JsonMap?> _executeCommand(JsonMap args) async {
     final sessionId = codexRequiredString(args['agentId'], 'agentId');
     final threadId = codexNativeThreadId(sessionId);
     final line = codexRequiredString(args['line'], 'command line').trim();
-    if (args['images'] is! List) {
-      throw const CodexValueError('The CodeX command image list is required.');
-    }
+    final attachments = _commandAttachments(args);
     final match = RegExp(r'^\/permission(?:\s+([\s\S]*))?$').firstMatch(line);
-    if (match == null) return null;
+    if (match == null) {
+      // A real answer, not null: `null` reaches the app as a generic
+      // "指令没有执行" with no code to word it from. Name the command and say
+      // this harness has none of it, so the row can say so in the user's words.
+      final name = RegExp(r'^\/(\S*)').firstMatch(line)?.group(1) ?? line;
+      throw CodexValueError('The CodeX virtual Harness does not implement /$name.', 'FEATURE_NOT_SUPPORTED');
+    }
     final commandId = 'codex-permission:${++_commandSeq}';
-    if (codexArray(args['images']).isNotEmpty) {
+    if (attachments.isNotEmpty) {
       return <String, Object?>{
         'commandId': commandId,
         'result': <String, Object?>{'kind': 'error', 'text': 'CodeX Remote permission commands do not accept attachments.'},

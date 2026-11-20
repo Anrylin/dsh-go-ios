@@ -205,22 +205,54 @@ class _NoticeKey extends StatelessWidget {
 
 /// `ChatState.error` 的行内横幅:浮在输入条上方,可关闭。
 /// [info] 用于 `ChatState.notice`:提示而非失败,换成信息色和图标。
-class ErrorBanner extends StatelessWidget {
-  const ErrorBanner({super.key, required this.message, this.onDismiss, this.info = false, this.action});
+///
+/// [details] 是可展开的脱敏摘要(白名单 key、限长、过滤 URL/路径/token/邮箱):
+/// 默认折叠,不打扰只需要知道「发送失败」的人;要报错时点开就有东西可抄。
+class ErrorBanner extends StatefulWidget {
+  const ErrorBanner({
+    super.key,
+    required this.message,
+    this.onDismiss,
+    this.info = false,
+    this.action,
+    this.details,
+  });
 
   final String message;
   final VoidCallback? onDismiss;
   final bool info;
   final NoticeAction? action;
 
+  /// Machine-readable digest, already redacted by [chatErrorDetails]. Empty or
+  /// null means no expandable section at all.
+  final String? details;
+
+  @override
+  State<ErrorBanner> createState() => _ErrorBannerState();
+}
+
+class _ErrorBannerState extends State<ErrorBanner> {
+  bool _expanded = false;
+
+  /// 兜底脱敏:调用方可能直接塞原始错误文本进来。
+  static String? _sanitize(String? details) {
+    final text = details?.trim();
+    if (text == null || text.isEmpty) return null;
+    final redacted = redactDiagnosticText(text).replaceAll(RegExp(r'\s+'), ' ').trim();
+    return redacted.length > errorDigestLimit ? '${redacted.substring(0, errorDigestLimit)}…' : redacted;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
+    final info = widget.info;
     final container = info ? dsh.infoContainer : dsh.dangerContainer;
     final accent = info ? dsh.info : dsh.danger;
     final onContainer = info ? dsh.onInfoContainer : dsh.onDangerContainer;
+    final details = _sanitize(widget.details);
+    final action = widget.action;
     return Semantics(
       liveRegion: true,
       child: DecoratedBox(
@@ -237,35 +269,100 @@ class ErrorBanner extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(info ? AppIcons.info : AppIcons.error, size: 17, color: accent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(color: onContainer),
-                ),
+              Row(
+                children: [
+                  Icon(info ? AppIcons.info : AppIcons.error, size: 17, color: accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: onContainer),
+                    ),
+                  ),
+                  if (details != null)
+                    _DetailsKey(
+                      label: _expanded ? l10n.commonCollapse : l10n.commonDetails,
+                      open: _expanded,
+                      color: onContainer,
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                    ),
+                  if (action != null)
+                    TextButton(
+                      style: TextButton.styleFrom(minimumSize: const Size(48, 48), foregroundColor: onContainer),
+                      onPressed: action.onPressed,
+                      child: Text(action.label),
+                    ),
+                  if (widget.onDismiss != null)
+                    IconButton(
+                      tooltip: l10n.commonClose,
+                      onPressed: widget.onDismiss,
+                      iconSize: 18,
+                      style: IconButton.styleFrom(minimumSize: const Size(40, 40), foregroundColor: onContainer),
+                      icon: const Icon(AppIcons.close),
+                    ),
+                ],
               ),
-              if (action case final action?)
-                TextButton(
-                  style: TextButton.styleFrom(minimumSize: const Size(48, 48), foregroundColor: onContainer),
-                  onPressed: action.onPressed,
-                  child: Text(action.label),
-                ),
-              if (onDismiss != null)
-                IconButton(
-                  tooltip: l10n.commonClose,
-                  onPressed: onDismiss,
-                  iconSize: 18,
-                  style: IconButton.styleFrom(minimumSize: const Size(40, 40), foregroundColor: onContainer),
-                  icon: const Icon(AppIcons.close),
+              if (details != null)
+                ExpandReveal(
+                  open: _expanded,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 25, right: 8, bottom: 6),
+                    child: SelectableText(
+                      details,
+                      style: AppType.tabular(
+                        theme.textTheme.bodySmall?.copyWith(color: onContainer.withValues(alpha: 0.75)) ??
+                            const TextStyle(),
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 横幅行尾的「详情」键:比操作键轻,只做展开/收起。
+class _DetailsKey extends StatelessWidget {
+  const _DetailsKey({required this.label, required this.open, required this.color, required this.onPressed});
+
+  final String label;
+  final bool open;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 40),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        visualDensity: VisualDensity.compact,
+        foregroundColor: color.withValues(alpha: 0.85),
+        textStyle: theme.textTheme.labelMedium,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          const SizedBox(width: 2),
+          AnimatedRotation(
+            turns: open ? 0.5 : 0,
+            duration: AppMotion.of(context, AppMotion.quick),
+            child: Icon(open ? AppIcons.collapse : AppIcons.expand, size: 15),
+          ),
+        ],
       ),
     );
   }

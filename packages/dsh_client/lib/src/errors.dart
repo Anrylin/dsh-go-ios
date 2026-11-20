@@ -6,6 +6,7 @@
 ///   [DshCarrierLostException]), which a retry or a re-login may fix.
 library;
 
+import 'error_digest.dart';
 import 'json.dart';
 
 sealed class DshException implements Exception {
@@ -41,8 +42,11 @@ final class DshRemoteException extends DshException {
   /// Dispatch failures owned by the Gateway rather than a business service.
   bool get isGatewayError => code.startsWith('gateway/');
 
+  /// Keeps the Host's `details` in the log line: without them a `code` alone
+  /// ("gateway/bad-request") says nothing about which field was wrong.
+  /// The digest is whitelisted and redacted, so it is safe to paste around.
   @override
-  String toString() => 'DshRemoteException($code): $message';
+  String toString() => 'DshRemoteException($code): $message${errorDigestSuffix(details)}';
 }
 
 /// The HTTP carrier rejected the request before RPC dispatch.

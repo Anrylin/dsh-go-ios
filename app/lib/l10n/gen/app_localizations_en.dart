@@ -7503,6 +7503,9 @@ class L10nEn extends L10n {
   String get hubSessionPlanHint => 'AI plans first, without changing files';
 
   @override
+  String get hubSessionPlanModeUnavailable => 'This engine doesn’t support plan mode';
+
+  @override
   String get hubSessionTodos => 'To-dos';
 
   @override
@@ -16280,6 +16283,19 @@ class L10nEn extends L10n {
 
   @override
   String get stateChatAgentBusy => 'AI is busy. Try again later.';
+
+  @override
+  String get stateChatCodexThreadBusy =>
+      'The other end is working in this Codex chat. It will retry when that finishes.';
+
+  @override
+  String get stateChatCodexUnavailable => 'CodeX is unavailable. Try again later.';
+
+  @override
+  String get stateChatInvalidRequest => 'The engine couldn’t read this request. Try wording it differently.';
+
+  @override
+  String get stateChatWorkspaceMissing => 'This workspace is gone';
 
   @override
   String get stateChatWriterHeld => 'This chat is in use elsewhere';

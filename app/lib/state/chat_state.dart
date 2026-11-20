@@ -262,6 +262,7 @@ class ChatState {
     this.loading = true,
     this.loadingOlder = false,
     this.error,
+    this.errorCause,
     this.defaultModelSaveFailed = false,
     this.notice,
     this.connection,
@@ -298,6 +299,11 @@ class ChatState {
   final bool loading;
   final bool loadingOlder;
   final String? error;
+
+  /// The exception behind [error], kept only for the banner's 「详情」 digest
+  /// (see `chatErrorDetails`). Never rendered directly: it still holds Host
+  /// text, paths and the like.
+  final Object? errorCause;
 
   /// The session model changed, but remembering it for new chats failed.
   /// Independent of transient send/sync errors; only explicit dismissal or a
@@ -367,6 +373,7 @@ class ChatState {
     bool? loading,
     bool? loadingOlder,
     String? error,
+    Object? errorCause,
     bool clearError = false,
     bool? defaultModelSaveFailed,
     String? notice,
@@ -390,6 +397,9 @@ class ChatState {
     loading: loading ?? this.loading,
     loadingOlder: loadingOlder ?? this.loadingOlder,
     error: clearError ? null : (error ?? this.error),
+    // A new error that brings no cause of its own must not inherit the previous
+    // one's: the banner would show details for a failure nobody is looking at.
+    errorCause: clearError ? null : (errorCause ?? (error == null ? this.errorCause : null)),
     defaultModelSaveFailed: defaultModelSaveFailed ?? this.defaultModelSaveFailed,
     notice: clearNotice ? null : (notice ?? this.notice),
     connection: connection,
@@ -879,6 +889,9 @@ class ChatController extends Notifier<ChatState> {
 
   /// The loaded conversation without its live parts (running, approvals,
   /// questions), across a new or a lost connection.
+  ///
+  /// An unspecified error keeps whatever the state already carries, so a cache
+  /// seed or an Agent switch does not erase a send failure's 「详情」.
   ChatState _retained({required bool loading, bool syncing = true}) => ChatState(
     items: _transcript.items,
     title: _transcript.title,
@@ -891,6 +904,10 @@ class ChatController extends Notifier<ChatState> {
     // A "syncing" state here would cover it with a spinner and disable the
     // composer even though sending is already possible (it queues).
     syncing: syncing,
+    // The send-failure banner (headline and 「详情」) must survive a cache seed
+    // or a retained rebuild; _publish() clears it only on a fresh snapshot.
+    error: state.error,
+    errorCause: state.errorCause,
     commands: _commandList(),
     model: _model,
     defaultModelSaveFailed: _defaultModelSaveFailed,
@@ -1875,6 +1892,7 @@ class ChatController extends Notifier<ChatState> {
       loading: false,
       loadingOlder: state.loadingOlder,
       error: freshSnapshot ? null : state.error,
+      errorCause: freshSnapshot ? null : state.errorCause,
       defaultModelSaveFailed: _defaultModelSaveFailed,
       notice: freshSnapshot ? null : state.notice,
       connection: _transcript.connectionState,
@@ -2448,7 +2466,12 @@ class ChatController extends Notifier<ChatState> {
         _forgetOutbox([requestId]);
       }
       _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
-      state = state.copyWith(pending: _placePending(), error: _sendFailure(e), notice: enqueueNotice);
+      state = state.copyWith(
+        pending: _placePending(),
+        error: _sendFailure(e),
+        errorCause: _sendFailureCause(e),
+        notice: enqueueNotice,
+      );
       return false;
     }
   }
@@ -2609,6 +2632,10 @@ class ChatController extends Notifier<ChatState> {
     _ when _imagesRefused(e) => appL10n.stateChatImageModelRequired,
     _ => chatErrorText(e, action: appL10n.stateSendFailed),
   };
+
+  /// What the 「详情」 line of that banner digests: the wrapped upload error
+  /// itself, so the digest names the HTTP status rather than `_UploadFailed`.
+  static Object _sendFailureCause(Object e) => e is _UploadFailed ? e.cause : e;
 
   /// The connection dropped mid-call: the prompt may have landed.
   static bool _outcomeUnknown(Object e) => switch (e is _UploadFailed ? e.cause : e) {
@@ -2791,7 +2818,7 @@ class ChatController extends Notifier<ChatState> {
       final gone = {for (final p in lost) p.requestId};
       _forgetOutbox(gone);
       _pending = List.unmodifiable(_pending.where((p) => !gone.contains(p.requestId)));
-      state = state.copyWith(error: _sendFailure(failure));
+      state = state.copyWith(error: _sendFailure(failure), errorCause: _sendFailureCause(failure));
     }
     _publish();
     return lost;
@@ -2953,6 +2980,7 @@ class ChatController extends Notifier<ChatState> {
         loading: state.loading,
         loadingOlder: state.loadingOlder,
         error: chatErrorText(e, action: appL10n.stateChatModelSwitchFailed),
+        errorCause: e,
         defaultModelSaveFailed: _defaultModelSaveFailed,
         connection: state.connection,
         model: previous,

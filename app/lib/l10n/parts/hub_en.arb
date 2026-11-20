@@ -20,6 +20,7 @@
   "hubSessionPlanMode": "Plan mode",
   "hubSessionPlanSwitching": "Switching plan mode",
   "hubSessionPlanHint": "AI plans first, without changing files",
+  "hubSessionPlanModeUnavailable": "This engine doesn’t support plan mode",
   "hubSessionTodos": "To-dos",
   "hubSessionNotStarted": "Not started",
   "hubSessionTurnUsage": "Usage by turn",
