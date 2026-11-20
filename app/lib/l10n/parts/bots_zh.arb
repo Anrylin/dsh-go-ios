@@ -890,6 +890,7 @@
   "botsListSeparator": "，",
   "botsNameSeparator": "、",
   "botsGlyphSubagent": "子代理",
+  "botsGlyphListAgents": "列出子代理",
   "botsGlyphWebSearch": "联网搜索",
   "botsSenderPreview": "{name}：{preview}",
   "@botsSenderPreview": {

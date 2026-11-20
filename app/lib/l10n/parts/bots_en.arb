@@ -378,6 +378,7 @@
   "botsListSeparator": ", ",
   "botsNameSeparator": ", ",
   "botsGlyphSubagent": "Subagent",
+  "botsGlyphListAgents": "List subagents",
   "botsGlyphWebSearch": "Web search",
   "botsSenderPreview": "{name}: {preview}",
   "botsAgentSemantics": "{title}, {state}",

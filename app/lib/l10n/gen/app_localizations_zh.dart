@@ -1033,6 +1033,29 @@ class L10nZh extends L10n {
   String get activityThinking => '思考';
 
   @override
+  String get activityCompactRunning => '优化对话';
+
+  @override
+  String get activityCompactDone => '已优化对话';
+
+  @override
+  String activityConnectorTool(String tool) {
+    return '连接器 · $tool';
+  }
+
+  @override
+  String get activityConnector => '连接器';
+
+  @override
+  String get activityEditFile => '修改文件';
+
+  @override
+  String get activityReviewMode => '审阅模式';
+
+  @override
+  String get activityCommand => '运行';
+
+  @override
   String get activityReplyInterrupted => '回复（已中断）';
 
   @override
@@ -2803,6 +2826,9 @@ class L10nZh extends L10n {
 
   @override
   String get botsGlyphSubagent => '子代理';
+
+  @override
+  String get botsGlyphListAgents => '列出子代理';
 
   @override
   String get botsGlyphWebSearch => '联网搜索';

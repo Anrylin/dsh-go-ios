@@ -2102,6 +2102,48 @@ abstract class L10n {
   /// **'思考'**
   String get activityThinking;
 
+  /// No description provided for @activityCompactRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'优化对话'**
+  String get activityCompactRunning;
+
+  /// No description provided for @activityCompactDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已优化对话'**
+  String get activityCompactDone;
+
+  /// No description provided for @activityConnectorTool.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接器 · {tool}'**
+  String activityConnectorTool(String tool);
+
+  /// No description provided for @activityConnector.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接器'**
+  String get activityConnector;
+
+  /// No description provided for @activityEditFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改文件'**
+  String get activityEditFile;
+
+  /// No description provided for @activityReviewMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'审阅模式'**
+  String get activityReviewMode;
+
+  /// No description provided for @activityCommand.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行'**
+  String get activityCommand;
+
   /// No description provided for @activityReplyInterrupted.
   ///
   /// In zh, this message translates to:
@@ -5149,6 +5191,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'子代理'**
   String get botsGlyphSubagent;
+
+  /// No description provided for @botsGlyphListAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'列出子代理'**
+  String get botsGlyphListAgents;
 
   /// No description provided for @botsGlyphWebSearch.
   ///

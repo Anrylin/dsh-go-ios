@@ -1039,6 +1039,29 @@ class L10nEn extends L10n {
   String get activityThinking => 'Thinking';
 
   @override
+  String get activityCompactRunning => 'Optimizing conversation';
+
+  @override
+  String get activityCompactDone => 'Conversation optimized';
+
+  @override
+  String activityConnectorTool(String tool) {
+    return 'Connector · $tool';
+  }
+
+  @override
+  String get activityConnector => 'Connector';
+
+  @override
+  String get activityEditFile => 'Edit file';
+
+  @override
+  String get activityReviewMode => 'Review mode';
+
+  @override
+  String get activityCommand => 'Run';
+
+  @override
   String get activityReplyInterrupted => 'Reply (interrupted)';
 
   @override
@@ -2955,6 +2978,9 @@ class L10nEn extends L10n {
 
   @override
   String get botsGlyphSubagent => 'Subagent';
+
+  @override
+  String get botsGlyphListAgents => 'List subagents';
 
   @override
   String get botsGlyphWebSearch => 'Web search';

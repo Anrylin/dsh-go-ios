@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../../../l10n/l10n.dart';
 import '../../common/risk_notice.dart';
+import '../../common/tool_glyph.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../tool_view.dart';
@@ -17,6 +18,19 @@ typedef ApprovalResponder = Future<void> Function(ApprovalRequest request, Appro
 
 /// "本对话都允许":允许这一次,并让本对话之后的审批都自动放行。
 typedef ApprovalAllowAll = Future<void> Function(ApprovalRequest request);
+
+/// 审批卡标题。抽出来便于测试;有 [ToolView] 时用它的动词(例如 MCP 工具名)。
+String approvalCardTitle(ApprovalRequest request, ToolView? view) {
+  final name = view?.name ?? request.toolName;
+  return switch (name) {
+    'bash' || 'pwsh' => appL10n.chatApproveCommand,
+    'write' => appL10n.chatApproveWrite,
+    'edit' || 'str_replace_editor' => appL10n.chatApproveEdit,
+    'web_fetch' => appL10n.chatApproveWebpage,
+    'web_search' => appL10n.chatApproveSearch,
+    _ => appL10n.chatApproveTool(view?.verb ?? ToolGlyphs.labelFor(name)),
+  };
+}
 
 /// 审批卡:**屏幕上最显眼的东西,但不靠大红色**。
 ///
@@ -74,17 +88,7 @@ class _ApprovalCardState extends State<ApprovalCard> {
     if (mounted) setState(() => _busy = null);
   }
 
-  String get _title {
-    final name = widget.view?.name ?? widget.request.toolName;
-    return switch (name) {
-      'bash' || 'pwsh' => appL10n.chatApproveCommand,
-      'write' => appL10n.chatApproveWrite,
-      'edit' || 'str_replace_editor' => appL10n.chatApproveEdit,
-      'web_fetch' => appL10n.chatApproveWebpage,
-      'web_search' => appL10n.chatApproveSearch,
-      _ => appL10n.chatApproveTool(name),
-    };
-  }
+  String get _title => approvalCardTitle(widget.request, widget.view);
 
   String? get _reason {
     final display = widget.request.displayReason;

@@ -20,8 +20,10 @@ abstract final class ToolGlyphs {
     'grep' || 'glob' => ToolTone.search,
     'web_fetch' || 'web_search' => ToolTone.web,
     'subagent' ||
+    'codex.subagent' ||
     'send_message' ||
     'interrupt_agent' ||
+    'list_agents' ||
     'list_subagent_models' ||
     'workflow' ||
     'ralph' ||
@@ -41,7 +43,8 @@ abstract final class ToolGlyphs {
     'glob' => AppIcons.folderOpen,
     'web_fetch' => AppIcons.web,
     'web_search' => AppIcons.webSearch,
-    'subagent' || 'send_message' || 'interrupt_agent' => AppIcons.subagents,
+    'subagent' || 'codex.subagent' => AppIcons.subagents,
+    'send_message' || 'interrupt_agent' => AppIcons.subagents,
     'workflow' || 'ralph' => AppIcons.workflow,
     'skill' => AppIcons.skill,
     'todo_write' => AppIcons.todo,
@@ -66,7 +69,8 @@ abstract final class ToolGlyphs {
     'glob' => appL10n.botsGlyphFindFiles,
     'web_fetch' => appL10n.botsGlyphOpenWeb,
     'web_search' => appL10n.botsGlyphWebSearch,
-    'subagent' => appL10n.botsGlyphSubagent,
+    'subagent' || 'codex.subagent' => appL10n.botsGlyphSubagent,
+    'list_agents' => appL10n.botsGlyphListAgents,
     'send_message' => appL10n.botsGlyphMessageAgent,
     'interrupt_agent' => appL10n.botsGlyphInterruptAgent,
     'list_subagent_models' => appL10n.botsGlyphListModels,
@@ -78,8 +82,20 @@ abstract final class ToolGlyphs {
     'get_goal' => appL10n.botsGlyphViewGoal,
     'update_goal' => appL10n.botsGlyphUpdateGoal,
     'ask_user_question' => appL10n.botsGlyphAsk,
-    _ when name.startsWith('mcp__') => name.split('__').last,
-    _ => name,
+    // Codex tool names from the remote history projection.
+    'codex.command' || 'codex.exec' => appL10n.botsGlyphRun,
+    'codex.webSearch' => appL10n.botsGlyphWebSearch,
+    'codex.image' => appL10n.botsGlyphImage,
+    'codex.reviewMode' => appL10n.activityReviewMode,
+    'codex.fileChange' => appL10n.activityEditFile,
+    // No status here: keep the name→label mapping tense-neutral. The running /
+    // done wording belongs to ToolView.verb, which knows the tool status.
+    'codex.compaction' => appL10n.activityToolCall,
+    'codex.mcpToolCall' => appL10n.activityConnector,
+    'mcp__' => appL10n.activityConnector,
+    _ when name.startsWith('codex.') => appL10n.activityToolCall,
+    _ when name.startsWith('mcp__') => appL10n.activityConnectorTool(name.split('__').last),
+    _ => appL10n.activityToolCall,
   };
 }
 

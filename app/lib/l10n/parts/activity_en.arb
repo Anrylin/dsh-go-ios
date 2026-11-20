@@ -248,6 +248,20 @@
   "activityDiffUnknownLines": "Line numbers unknown",
   "activityDiffCopyPath": "Copy path",
   "activityThinking": "Thinking",
+  "activityCompactRunning": "Optimizing conversation",
+  "activityCompactDone": "Conversation optimized",
+  "activityConnectorTool": "Connector · {tool}",
+  "@activityConnectorTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "activityConnector": "Connector",
+  "activityEditFile": "Edit file",
+  "activityReviewMode": "Review mode",
+  "activityCommand": "Run",
   "activityReplyInterrupted": "Reply (interrupted)",
   "activityWaitingApproval": "Waiting for approval",
   "activityWaitingAnswer": "Waiting for answer",

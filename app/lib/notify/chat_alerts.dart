@@ -23,6 +23,7 @@ import 'package:dsh_client/dsh_client.dart';
 
 import '../l10n/l10n.dart';
 import '../state/hosts_state.dart';
+import '../ui/common/tool_glyph.dart';
 import '../ui/chat/media/media_format.dart' show chatTitleShown;
 import '../ui/chat/secret_mask.dart';
 import '../ui/chat/widgets/turn_failure_text.dart';
@@ -202,7 +203,7 @@ String approvalText(ApprovalRequest request) {
     'edit' || 'str_replace_editor' => appL10n.stateEditFile,
     'web_fetch' => appL10n.stateOpenPage,
     'web_search' => appL10n.stateWebSearch,
-    final name => appL10n.stateAlertUseTool(name),
+    final name => appL10n.stateAlertUseTool(ToolGlyphs.labelFor(name)),
   };
   final display = request.displayReason;
   final reason = snippet(
