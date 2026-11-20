@@ -4703,7 +4703,6 @@
   "stateGroupChat": "Group chat",
   "stateBotNewMessage": "New bot message",
   "stateChatAgentBusy": "AI is busy. Try again later.",
-  "stateChatCodexThreadBusy": "The other end is working in this Codex chat. It will retry when that finishes.",
   "stateChatCodexUnavailable": "CodeX is unavailable. Try again later.",
   "stateChatInvalidRequest": "The engine couldn’t read this request. Try wording it differently.",
   "stateChatWorkspaceMissing": "This workspace is gone",

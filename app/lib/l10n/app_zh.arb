@@ -9648,7 +9648,6 @@
   "stateGroupChat": "群聊",
   "stateBotNewMessage": "Bot 有新消息",
   "stateChatAgentBusy": "AI 正忙，稍后再试",
-  "stateChatCodexThreadBusy": "另一端正在操作这个 Codex 对话，等它结束后会自动重试",
   "stateChatCodexUnavailable": "CodeX 暂时用不了，稍后再试",
   "stateChatInvalidRequest": "这次请求的内容引擎没看懂，换个说法再试",
   "stateChatWorkspaceMissing": "这个工作区已经不在了",
