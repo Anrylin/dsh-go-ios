@@ -6,15 +6,17 @@
 //   ├── summary.json   app and DSH versions, device, Android, runtime manifest,
 //   │                  engine state, connection kind
 //   ├── settings.json  app settings, secrets reduced to "set or not"
+//   ├── app-events.json structured app event ring (always present, `[]` if empty)
 //   ├── crash.json     the last crash classification (when there is one)
 //   ├── engine.log     recent engine output
 //   └── failure.log    output around the last failure (when there is one)
 //
-// Every string goes through `redactDiagnostics` on the way in.
+// Every string goes through `redactDiagnostics` on the way in. App events are
+// redacted again when written, so an older event cannot bypass a newer mask.
 
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../runtime/runtime_bridge.dart';
@@ -24,8 +26,9 @@ import '../state/app_info.dart';
 import '../state/connection_state.dart';
 import '../state/settings_state.dart';
 import '../state/voice_settings.dart';
-import 'diagnostics_channel.dart';
 import 'app_error_log.dart';
+import 'app_event_log.dart';
+import 'diagnostics_channel.dart';
 import 'redact.dart';
 import 'zip_writer.dart';
 
@@ -45,6 +48,9 @@ class DiagnosticsSnapshot {
     this.engineLog = const [],
     this.failureLog = const [],
     this.appErrors = const [],
+    this.appEvents = const [],
+    this.droppedEvents = 0,
+    this.appEventCapacity = defaultAppEventCapacity,
   });
 
   final DateTime at;
@@ -60,6 +66,9 @@ class DiagnosticsSnapshot {
   final List<String> engineLog;
   final List<String> failureLog;
   final List<AppErrorRecord> appErrors;
+  final List<AppEventRecord> appEvents;
+  final int droppedEvents;
+  final int appEventCapacity;
 }
 
 abstract final class DiagnosticsBundle {
@@ -71,6 +80,30 @@ abstract final class DiagnosticsBundle {
     String two(int n) => n.toString().padLeft(2, '0');
     return 'dsh-go-diagnostics-${at.year}${two(at.month)}${two(at.day)}-'
         '${two(at.hour)}${two(at.minute)}${two(at.second)}.zip';
+  }
+
+  /// Identity columns added to every summary's `connection`. Values are
+  /// supplied by [collectDiagnostics] when the app actually observed them;
+  /// absent ones stay null so the schema is stable across builds.
+  static const connectionIdentityKeys = <String>[
+    'hostId',
+    'hostKind',
+    'agent',
+    'clientId',
+    'sessionId',
+    'turnId',
+    'requestId',
+    'muxGeneration',
+    'followEpoch',
+    'connectedAt',
+  ];
+
+  static Map<String, Object?> connectionSummary(Map<String, Object?> observed) {
+    final out = <String, Object?>{...observed};
+    for (final key in connectionIdentityKeys) {
+      out.putIfAbsent(key, () => null);
+    }
+    return out;
   }
 
   static Map<String, Object?> summary(DiagnosticsSnapshot s) {
@@ -97,8 +130,9 @@ abstract final class DiagnosticsBundle {
         'error': status.error,
       },
       'manifest': s.native.manifest,
-      'connection': s.connection,
+      'connection': connectionSummary(s.connection),
       'performance': s.performance,
+      'appEvents': {'count': s.appEvents.length, 'droppedEvents': s.droppedEvents, 'capacity': s.appEventCapacity},
       'voice': {...voiceDiagnosticsFacts(s.native.voice), 'mode': s.voiceMode.name},
     };
   }
@@ -149,7 +183,8 @@ abstract final class DiagnosticsBundle {
   static List<ZipEntry> entries(DiagnosticsSnapshot s) {
     const json = JsonEncoder.withIndent('  ');
     ZipEntry text(String name, String body) => ZipEntry(name, utf8.encode(body));
-    ZipEntry jsonFile(String name, Object? value) => text(name, '${json.convert(redactJson(value))}\n');
+    ZipEntry jsonFile(String name, Object? value, {int lineLimit = maxLineLength}) =>
+        text(name, '${json.convert(redactJson(value, lineLimit: lineLimit))}\n');
     String log(List<String> lines) {
       final tail = lines.length > diagnosticsLogLines ? lines.sublist(lines.length - diagnosticsLogLines) : lines;
       return '${redactLines(tail).join('\n')}\n';
@@ -159,6 +194,11 @@ abstract final class DiagnosticsBundle {
     return [
       jsonFile('summary.json', summary(s)),
       jsonFile('settings.json', settingsSummary(s.settings)),
+      // Unconditional: an empty ring is itself a diagnostic fact. Events
+      // already carry an explicit truncation marker; do not re-truncate here.
+      jsonFile('app-events.json', [
+        for (final event in s.appEvents) event.toJson(),
+      ], lineLimit: appEventRedactionLineLimit),
       if (crash != null) jsonFile('crash.json', crash),
       if (s.engineLog.isNotEmpty) text('engine.log', log(s.engineLog)),
       if (s.failureLog.isNotEmpty) text('failure.log', log(s.failureLog)),
@@ -169,35 +209,32 @@ abstract final class DiagnosticsBundle {
   static Uint8List build(DiagnosticsSnapshot s) => buildZip(entries(s), modified: s.at);
 }
 
-/// Reads a [DiagnosticsSnapshot] from the app's state and Android. Every
-/// source is optional: a part that can't be read is left out.
+/// Reads a [DiagnosticsSnapshot] from the app's state and native side. Every
+/// source is optional: a part that can't be read is left out, and the fallback
+/// is recorded as an app event instead of being silently swallowed.
 Future<DiagnosticsSnapshot> collectDiagnostics(Ref ref, DateTime at) async {
   final runtime = ref.read(localRuntimeProvider);
   final logs = ref.read(localRuntimeLogsProvider);
   final settings = ref.read(settingsProvider);
   final bridge = ref.read(runtimeBridgeProvider);
   final channel = ref.read(diagnosticsChannelProvider);
-  const wait = Duration(seconds: 5);
 
-  Future<T> attempt<T>(Future<T> Function() read, T fallback) async {
-    try {
-      return await read().timeout(wait);
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  final native = await attempt(channel.info, const NativeDiagnostics());
+  final native = await diagnosticsAttempt('native.info', 'empty native', channel.info, const NativeDiagnostics());
   // The log file outlives the app process; the in-memory log is the
   // fallback (and what tests see).
-  var engineLog = await attempt(channel.engineLog, const <String>[]);
+  var engineLog = await diagnosticsAttempt('native.engineLog', 'empty log', channel.engineLog, const <String>[]);
   if (engineLog.isEmpty) {
-    engineLog = await attempt(() => bridge.logs(lines: diagnosticsLogLines), logs);
+    engineLog = await diagnosticsAttempt(
+      'bridge.logs',
+      'in-memory engine log',
+      () => bridge.logs(lines: diagnosticsLogLines),
+      logs,
+    );
   }
   if (engineLog.isEmpty) engineLog = logs;
   final status = runtime.status;
   final failureLog = status.failure != null || status.mainFailure != null
-      ? await attempt(bridge.failureLog, const <String>[])
+      ? await diagnosticsAttempt('bridge.failureLog', 'empty log', bridge.failureLog, const <String>[])
       : const <String>[];
 
   return DiagnosticsSnapshot(
@@ -205,11 +242,79 @@ Future<DiagnosticsSnapshot> collectDiagnostics(Ref ref, DateTime at) async {
     status: status,
     settings: settings,
     native: native,
-    connection: ref.read(connectionDiagnosticsProvider).snapshot,
+    connection: _connectionIdentity(ref, ref.read(connectionDiagnosticsProvider).snapshot),
     performance: performanceDiagnostics(ref),
-    voiceMode: await attempt(() => ref.read(voiceSettingsProvider.notifier).ready(), VoiceMode.auto),
+    voiceMode: await diagnosticsAttempt(
+      'voice.ready',
+      'auto',
+      () => ref.read(voiceSettingsProvider.notifier).ready(),
+      VoiceMode.auto,
+    ),
     engineLog: engineLog,
     failureLog: failureLog,
     appErrors: appErrorLog.snapshot(),
+    appEvents: appEventLog.snapshot(),
+    droppedEvents: appEventLog.droppedEvents,
+    appEventCapacity: appEventLog.capacity,
   );
+}
+
+/// Enriches the already-observed connection with identity fields the app can
+/// actually prove. Nothing is invented: unknown columns stay null and are
+/// filled in as null by [DiagnosticsBundle.connectionSummary].
+Map<String, Object?> _connectionIdentity(Ref ref, Map<String, Object?> observed) {
+  final result = <String, Object?>{...observed};
+  final host = observed['host'];
+  if (host is String && host.isNotEmpty && host != 'not_observed') result['hostKind'] = host;
+
+  HostConnection? active;
+  try {
+    // Reading an unbuilt connection would create one (and start native work).
+    if (ref.exists(activeConnectionProvider)) {
+      active = ref.read(activeConnectionProvider).value;
+    }
+  } catch (_) {
+    // Diagnostics must never build or break a connection of its own.
+    active = null;
+  }
+  if (active != null) {
+    result['hostKind'] ??= active.kind.name;
+    final hostId = active.hostId;
+    if (hostId != null && hostId.isNotEmpty) result['hostId'] = maskDiagnosticsId(hostId);
+    result['agent'] = active.agent.code;
+    final generation = active.client.mux.generation;
+    if (generation != null) {
+      result['clientId'] = maskDiagnosticsId(generation.clientId);
+      result['muxGeneration'] = generation.number;
+    }
+  }
+  return result;
+}
+
+/// One optional source read. A failure becomes an event carrying the source,
+/// exception type, redacted message and the fallback that was used. Public so
+/// the behavior is testable without a live channel or bridge.
+Future<T> diagnosticsAttempt<T>(
+  String source,
+  String fallbackName,
+  Future<T> Function() read,
+  T fallback, {
+  Duration timeout = const Duration(seconds: 5),
+  AppEventLog? log,
+}) async {
+  try {
+    return await read().timeout(timeout);
+  } catch (error) {
+    (log ?? appEventLog).record(
+      topic: 'diagnostics_collect',
+      event: 'source_fallback',
+      fields: {
+        'source': source,
+        'errorType': error.runtimeType.toString(),
+        'errorMessage': error.toString(),
+        'fallback': fallbackName,
+      },
+    );
+    return fallback;
+  }
 }

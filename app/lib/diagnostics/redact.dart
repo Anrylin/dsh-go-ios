@@ -14,13 +14,14 @@ const maxLineLength = 2000;
 /// (`CrashClassifier.redact`): `token=•••`.
 final _launchToken = RegExp(r'token=[A-Za-z0-9._~%-]+');
 
-/// `Authorization: Bearer <credential>` (and `Basic`).
+/// `Authorization: Bearer <credential>` (and `Basic`). The `_marker` guard
+/// keeps an already-masked value stable when a bundle is redacted twice.
 final _bearer = RegExp(r'\b(Bearer|Basic)\s+(?!•)[A-Za-z0-9._~+/=-]+', caseSensitive: false);
 
 /// Assignments whose value is a secret whatever it looks like:
 /// `password=…`, `"secret": "…"`, `Cookie: …`, `Authorization: Basic …`.
 final _secretAssignment = RegExp(
-  r'''\b([A-Za-z0-9_.-]*(?:passw(?:or)?d|passphrase|secret|credential|cookie|authorization)[A-Za-z0-9_.-]*)("?\s*[:=]\s*["']?)(?!•)(?!(?:Bearer|Basic)\b)([^\s"',;&]+)''',
+  r'''\b([A-Za-z0-9_.-]*(?:passw(?:or)?d|passphrase|secret|credential|cookie|authorization)[A-Za-z0-9_.-]*)("?\s*[:=]\s*["']?)(?!•|true\b|false\b|<redacted>)(?!(?:Bearer|Basic)\b)([^\s"',;&]+)''',
   caseSensitive: false,
 );
 
@@ -28,7 +29,7 @@ final _secretAssignment = RegExp(
 /// characters, not a plain number): `DEEPSEEK_API_KEY=…`, `"apiKey": "…"`,
 /// `access_token=…`; `tokens: 1234` stays.
 final _keyAssignment = RegExp(
-  r'''\b([A-Za-z0-9_.-]*(?:api[_-]?key|apikey|access[_-]?key|private[_-]?key|token)[A-Za-z0-9_.-]*)("?\s*[:=]\s*["']?)(?!•)(?![0-9]+(?:[\s"',;&]|$))([^\s"',;&]{8,})''',
+  r'''\b([A-Za-z0-9_.-]*(?:api[_-]?key|apikey|access[_-]?key|private[_-]?key|token)[A-Za-z0-9_.-]*)("?\s*[:=]\s*["']?)(?!•|<redacted>|true\b|false\b)(?![0-9]+(?:[\s"',;&]|$))([^\s"',;&]{8,})''',
   caseSensitive: false,
 );
 
@@ -74,15 +75,14 @@ const _prefixes = [
 ///   assignments.
 ///
 /// Unlike the chat's display mask, nothing of a key's own characters stays.
-/// Lines longer than [maxLineLength] are cut first (an inlined image in a
-/// log line says nothing to a reader, and it keeps the scan short).
-String redactDiagnostics(String text) {
+/// Lines longer than [lineLimit] (default [maxLineLength]) are cut first (an
+/// inlined image in a log line says nothing to a reader, and it keeps the scan
+/// short). App events pass a larger limit: their own bounded payload check
+/// records a visible marker instead of letting the redactor cut silently.
+String redactDiagnostics(String text, {int lineLimit = maxLineLength}) {
   var out = stripAnsi(text);
-  if (out.length > maxLineLength) {
-    out = out
-        .split('\n')
-        .map((line) => line.length > maxLineLength ? '${line.substring(0, maxLineLength)}…' : line)
-        .join('\n');
+  if (out.length > lineLimit) {
+    out = out.split('\n').map((line) => line.length > lineLimit ? '${line.substring(0, lineLimit)}…' : line).join('\n');
   }
   final secrets = findSecrets(out);
   if (secrets.isNotEmpty) {
@@ -109,10 +109,10 @@ List<String> redactLines(Iterable<String> lines) => [for (final line in lines) r
 
 /// A JSON-shaped value with every string through [redactDiagnostics]; keys
 /// and non-string values unchanged (`"hasApiKey": true` stays readable).
-Object? redactJson(Object? value) => switch (value) {
-  String() => redactDiagnostics(value),
-  Map() => {for (final e in value.entries) '${e.key}': redactJson(e.value)},
-  Iterable() => [for (final v in value) redactJson(v)],
+Object? redactJson(Object? value, {int lineLimit = maxLineLength}) => switch (value) {
+  String() => redactDiagnostics(value, lineLimit: lineLimit),
+  Map() => {for (final e in value.entries) '${e.key}': redactJson(e.value, lineLimit: lineLimit)},
+  Iterable() => [for (final v in value) redactJson(v, lineLimit: lineLimit)],
   _ => value,
 };
 
