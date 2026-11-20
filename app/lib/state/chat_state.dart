@@ -475,6 +475,27 @@ class ChatController extends Notifier<ChatState> {
   bool _autoApprove = false;
   Set<String> _autoAnswered = const {};
   HostRef? _approvalHost;
+  RemoteAgent? _approvalAgent;
+
+  /// Agent this controller is currently showing. A relay Host keeps one
+  /// controller per session, so a switch must reset everything learned from
+  /// the previous Agent before the replacement link is accepted.
+  RemoteAgent? _agent;
+
+  /// Sends written while there was no client, and the targeted replays already
+  /// started for them (so a second listener does not submit them twice).
+  final _offlineQueuedIds = <String>{};
+  final _replayRequestedIds = <String>{};
+
+  /// Route checks captured when a send was written without a client. A replay
+  /// must re-check them: the phone route that was prepared for the draft may
+  /// have been replaced while it waited on disk.
+  final _offlineDeliveryAllowed = <String, bool Function()>{};
+
+  /// Bounded retries for a replay that gave up without handing anything over.
+  /// Counts are per queued id and clear with the id when it settles.
+  final _replayRestarts = <String, int>{};
+  Object? _restartRef;
   Object _approvalScope = Object();
   final _commands = CommandLog();
   var _localCommands = 0;
@@ -502,7 +523,16 @@ class ChatController extends Notifier<ChatState> {
   Duration? _skew;
   bool _sameClock = false;
 
-  DshClient? get _client => ref.read(activeConnectionProvider).value?.client;
+  /// A connection is only usable when it speaks to the Agent shown here. A
+  /// retired Agent's link is disposed by the connection controller; using its
+  /// client would be a fake connection and would deliver to the wrong Agent.
+  DshClient? get _client {
+    final connection = ref.read(activeConnectionProvider).value;
+    if (connection == null || connection.agent != ref.read(activeAgentProvider)) return null;
+    return connection.client;
+  }
+
+  String _currentAgentKey() => _cacheHostId(ref.read(activeHostProvider), ref.read(activeAgentProvider));
 
   bool get _canControl =>
       _synchronized && (_followEpoch?.isCurrent ?? true) && identical(_snapshotGeneration, _client?.mux.generation);
@@ -546,25 +576,40 @@ class ChatController extends Notifier<ChatState> {
     // rebuild may reuse this Notifier for an identically named session there.
     // Reconnecting to the same Host keeps the existing conversation consent.
     final host = ref.watch(activeHostProvider);
+    final agent = ref.watch(activeAgentProvider);
+    // The same session id on the same relay Host can mean a different Agent.
+    // Nothing from the old link may survive into the target conversation.
+    if (_agent != null && _agent != agent) _resetForAgentSwitch();
+    _agent = agent;
     ref.listen(accountProvider.select((s) => s.profile?.id), (previous, next) {
       if (previous != null && previous != next) {
         _outboxKeys.clear();
         _restartIds.clear();
+        _offlineDeliveryAllowed.clear();
+        _replayRestarts.clear();
+        _restartRef = null;
         _replayHandedOff = false;
         _replayOwner = null;
         ref.read(pendingSendOutboxProvider.future).then((box) => box.clearAccount(previous)).ignore();
       }
     });
-    if (_approvalHost != host) {
-      // These requests belong to the previous Host, even if the new Host has
-      // the same session id. A new watch replays its own mux's pending requests.
-      // Retire only the local cards; do not answer or cancel the old Host's work.
+    if (_approvalHost != host || _approvalAgent != agent) {
+      // These requests belong to the previous Host/Agent, even if the new one
+      // has the same session id. A new watch replays its own mux's pending
+      // requests. Retire only the local cards; do not answer or cancel old work.
+      // A → B → A must not hand the startup outbox replay to a B-era listener.
       for (final id in [..._transcript.pendingApprovals.keys, ..._transcript.pendingQuestions.keys]) {
         _transcript.apply(HostRequestCancelledEvent(id));
       }
       _approvalHost = host;
+      _approvalAgent = agent;
       _replayHandedOff = false;
       _replayOwner = null;
+      _replayRequestedIds.clear();
+      _offlineQueuedIds.clear();
+      _offlineDeliveryAllowed.clear();
+      _replayRestarts.clear();
+      _restartRef = null;
       _defaultModelSaveFailed = false;
       _approvalScope = Object();
       _autoApprove = false;
@@ -596,11 +641,15 @@ class ChatController extends Notifier<ChatState> {
 
     ref.onCancel(releaseLater);
     ref.onResume(() => release?.cancel());
-    final client = ref.watch(activeConnectionProvider.select((c) => c.value?.client));
+    ref.watch(activeConnectionProvider.select((c) => c.value?.client));
+    // Read through the Agent guard: a stale link for the previous Agent is no
+    // client at all, even when the selected async value still carries it.
+    final client = _client;
     ref.onDispose(() {
       // Invalidation runs before a lazy rebuild replaces the still-mounted Ref.
       _modelChange = null;
       _listenOwner = Object();
+      _restartRef = null;
       _followEpoch?.retire();
       if (!_syncReady.isCompleted) _syncReady.complete(false);
       release?.cancel();
@@ -617,8 +666,8 @@ class ChatController extends Notifier<ChatState> {
     _seedFromCache();
     // Not connected is a screen state (the composer explains it), not an
     // error. What was loaded stays until a new snapshot replaces it.
-    if (client == null) return _retained(loading: false);
-    _sameClock = ref.read(activeConnectionProvider).value!.isLocal;
+    if (client == null) return _retained(loading: false, syncing: false);
+    _sameClock = ref.read(activeConnectionProvider).value?.isLocal ?? false;
     if (_sameClock) {
       _quiet = false;
     } else {
@@ -640,6 +689,73 @@ class ChatController extends Notifier<ChatState> {
       }
     });
     return _retained(loading: _transcript.items.isEmpty);
+  }
+
+  /// An Agent switch is silent: the retired link is disposed by the connection
+  /// controller, so its client, stream and follow epoch are gone. Drop every
+  /// projection learned from it; the caller's `_retained` publishes a clean,
+  /// non-syncing state that the target Agent's cache seeds immediately.
+  void _resetForAgentSwitch() {
+    _transcript.clear();
+    _commands.clear();
+    _localCommands = 0;
+    _pending = const [];
+    _withdrawn.clear();
+    _claimedAt.clear();
+    _retryingFailed.clear();
+    _moving.clear();
+    _unsettled = null;
+    _stoppingOperation = null;
+    _stopTimeout?.cancel();
+    _stopAttempt++;
+    _flush?.cancel();
+    _flush = null;
+    _dirty = false;
+    _autoApprove = false;
+    _autoAnswered = const {};
+    _defaultModelSaveFailed = false;
+    _model = null;
+    _modelChange = null;
+    _historyRead = null;
+    _synchronized = false;
+    _snapshotGeneration = null;
+    _seedKey = null;
+    _cachedSeq = null;
+    _lookupKey = null;
+    _branchPoints.clear();
+    _replyIds.clear();
+    _followEpoch?.retire();
+    _followEpoch = null;
+    unawaited(_sub?.cancel());
+    unawaited(_states?.cancel());
+    _sub = null;
+    _states = null;
+    _watchEnded = false;
+    _watchRetryTimer?.cancel();
+    _watchRetries = 0;
+    _watchRetryClient = null;
+    _awayTimer?.cancel();
+    _awayLong = false;
+    _quiet = false;
+    _skew = null;
+    _sameClock = false;
+    // Every async continuation from the old Agent must fail `current()`.
+    _listenOwner = Object();
+    _syncScope = Object();
+    if (!_syncReady.isCompleted) _syncReady.complete(false);
+    _syncReady = Completer<bool>();
+    _resyncFuture = null;
+    _resyncOwner = null;
+    // The outbox keeps its per-Agent keys; only this run's replay marks change.
+    _replayOwner = null;
+    _replayHandedOff = false;
+    _replayRequestedIds.clear();
+    _offlineQueuedIds.clear();
+    _offlineDeliveryAllowed.clear();
+    _replayRestarts.clear();
+    _restartRef = null;
+    _approvalHost = null;
+    _approvalAgent = null;
   }
 
   /// How long the app may be out of sight before a running conversation on a
@@ -681,7 +797,7 @@ class ChatController extends Notifier<ChatState> {
 
   /// The loaded conversation without its live parts (running, approvals,
   /// questions), across a new or a lost connection.
-  ChatState _retained({required bool loading}) => ChatState(
+  ChatState _retained({required bool loading, bool syncing = true}) => ChatState(
     items: _transcript.items,
     title: _transcript.title,
     turns: _transcript.turns,
@@ -689,7 +805,10 @@ class ChatController extends Notifier<ChatState> {
     goal: _transcript.goal,
     hasMoreHistory: _transcript.hasMoreHistory,
     loading: loading,
-    syncing: true,
+    // While the replacement Agent connects the cached window is authoritative.
+    // A "syncing" state here would cover it with a spinner and disable the
+    // composer even though sending is already possible (it queues).
+    syncing: syncing,
     commands: _commandList(),
     model: _model,
     defaultModelSaveFailed: _defaultModelSaveFailed,
@@ -703,9 +822,8 @@ class ChatController extends Notifier<ChatState> {
   /// must not lose the window.
   /// A relay Host's transcript belongs to the Agent that produced it. Local
   /// and SSH hosts always run DSH and keep their existing store key.
-  static String _cacheHostId(HostRef host, RemoteAgent agent) => host.kind == HostKind.relay
-      ? '${host.kind.name}:${host.id}:${agent.code}'
-      : '${host.kind.name}:${host.id}';
+  static String _cacheHostId(HostRef host, RemoteAgent agent) =>
+      host.kind == HostKind.relay ? '${host.kind.name}:${host.id}:${agent.code}' : '${host.kind.name}:${host.id}';
 
   /// Seeds the loaded transcript with the cached window for this session, once
   /// per Host; a snapshot arriving meanwhile wins.
@@ -726,13 +844,15 @@ class ChatController extends Notifier<ChatState> {
         )
         .then((window) {
           if (!owner.mounted || _seedKey != key) return;
-          if (owner.read(activeHostProvider) != host) return;
-          // Only a transcript that has not seen a snapshot can be seeded.
+          if (owner.read(activeHostProvider) != host || _currentAgentKey() != key) return;
+          // Only a transcript that has not seen a snapshot can be seeded. An
+          // Agent switch clears it and resets _seedKey, so the target Agent's
+          // cached window is read even though this controller was reused.
           if (_synchronized || _transcript.cursor >= 0 || _transcript.items.isNotEmpty) return;
           if (window == null) return;
           _transcript.seedItems(window.items, title: window.title);
           _cachedSeq = window.cursor;
-          state = _retained(loading: false);
+          state = _retained(loading: false, syncing: _client == null ? false : state.syncing);
         })
         .ignore();
   }
@@ -740,17 +860,19 @@ class ChatController extends Notifier<ChatState> {
   /// Writes the visible window once a turn settles, so a restart or a switch
   /// back paints it. A snapshot whose cursor moved backwards never overwrites
   /// the newer window already on disk.
-  void _saveToCache() {
+  void _saveToCache(String key) {
+    // A late publish from a retired Agent must never write into the target's
+    // namespace, even if its transcript still held the old window.
+    if (key != _currentAgentKey()) return;
     final cursor = _transcript.cursor;
     if (cursor < 0) return;
     final cached = _cachedSeq;
     if (cached != null && cursor <= cached) return;
     final items = _transcript.items;
     if (items.isEmpty) return;
-    final host = ref.read(activeHostProvider);
     final window = CachedTranscript(
       account: ref.read(accountProvider).profile?.id ?? localChatOwner,
-      hostId: _cacheHostId(host, ref.read(activeAgentProvider)),
+      hostId: key,
       sessionId: sessionId,
       cursor: cursor,
       title: _transcript.title,
@@ -774,27 +896,33 @@ class ChatController extends Notifier<ChatState> {
     for (final id in ids) {
       final key = _outboxKeys.remove(id);
       _restartIds.remove(id);
+      _offlineDeliveryAllowed.remove(id);
+      _replayRestarts.remove(id);
       if (key != null) (byKey[key] ??= []).add(id);
     }
     if (byKey.isEmpty) return;
     ref
         .read(pendingSendOutboxProvider.future)
-        .then((outbox) => Future.wait([
-          for (final entry in byKey.entries)
-            for (final id in entry.value) outbox.remove(entry.key, id),
-        ]))
+        .then(
+          (outbox) => Future.wait([
+            for (final entry in byKey.entries)
+              for (final id in entry.value) outbox.remove(entry.key, id),
+          ]),
+        )
         .ignore();
   }
 
   /// Writes the draft before any RPC goes out. A replay already has a durable
   /// entry; it only needs its key tracked locally again after a restart.
+  /// [key] is captured by the caller at send time: the Agent that owns the
+  /// message must not change while the durable write is in flight.
   Future<String?> _enqueuePending(
     String requestId,
     String text,
     List<DraftAttachment> attachments, {
+    required PendingSendKey key,
     required bool replay,
   }) async {
-    final key = _pendingKey();
     if (replay) {
       _outboxKeys[requestId] = key;
       return null;
@@ -905,16 +1033,31 @@ class ChatController extends Notifier<ChatState> {
   void _listen(DshClient client, RunPulse pulse, {bool building = false}) {
     final owner = ref;
     final listener = _listenOwner = Object();
+    // Every replay started by the previous listener rechecks this owner before
+    // it delivers, so it can no longer send. Drop its claims now: leaving them
+    // until that stale replay unwinds makes this listener skip the very ids it
+    // is supposed to pick up.
+    _replayRequestedIds.clear();
+    _restartRef = null;
     _watchEnded = false;
     _watchRetryTimer?.cancel();
-    bool current() => owner.mounted && identical(listener, _listenOwner) && identical(client, _client);
+    final key = _currentAgentKey();
+    bool current() =>
+        owner.mounted && identical(listener, _listenOwner) && identical(client, _client) && _currentAgentKey() == key;
     if (!_syncReady.isCompleted) _syncReady.complete(false);
     _syncReady = Completer<bool>();
     _markSyncing(building: building);
     final scope = _syncScope;
-    if (!identical(_replayOwner, listener) && !_replayHandedOff) {
+    final firstReplay = !identical(_replayOwner, listener) && !_replayHandedOff;
+    // A send queued while there was no client has to go out once this link is
+    // live. A reconnect after the startup replay does not resend ordinary
+    // in-flight prompts; only these explicitly queued ones are targeted.
+    final freshOffline = _offlineQueuedIds.difference(_replayRequestedIds);
+    if (firstReplay || freshOffline.isNotEmpty) {
       _replayOwner = listener;
-      unawaited(_replayOutbox(client, listener, scope));
+      // [_replayOutbox] claims the ids synchronously when it starts: a mark
+      // made here would belong to a replay that may never get to deliver.
+      unawaited(_replayOutbox(client, listener, scope, key: key, only: firstReplay ? null : freshOffline));
     }
     unawaited(_sub?.cancel());
     _sub = client
@@ -941,8 +1084,7 @@ class ChatController extends Notifier<ChatState> {
               _markSyncing();
             }
             if (event is SessionSnapshotEvent) {
-              if (!identical(event.followEpoch, _followEpoch) ||
-                  !(event.followEpoch?.isCurrent ?? true)) {
+              if (!identical(event.followEpoch, _followEpoch) || !(event.followEpoch?.isCurrent ?? true)) {
                 // A queued snapshot from a retired follow cannot satisfy this
                 // screen. Ask for a fresh one instead of waiting forever.
                 unawaited(resync());
@@ -1023,17 +1165,31 @@ class ChatController extends Notifier<ChatState> {
           },
           onError: (Object e) {
             if (!current()) return;
+            // A window this controller already painted came from a live
+            // snapshot of *this* Agent: a not-found afterwards means the
+            // conversation is gone, not that the replacement Agent has yet to
+            // learn about it.
+            final painted = _synchronized || _transcript.cursor >= 0 || _transcript.items.isNotEmpty;
             _watchEnded = true;
             _markSyncing();
             if (!_syncReady.isCompleted) _syncReady.complete(false);
-            // Deleted elsewhere: back to a new chat, nothing to report.
             if (e is DshRemoteException && e.code == 'session/not-found') {
-              if (ref.read(currentSessionProvider) == sessionId) {
-                ref.read(currentSessionProvider.notifier).select(null);
+              // Not a connection problem, so no streamLost and no retry.
+              if (!painted) {
+                // The newly selected Agent does not know this session id (yet):
+                // back to a new chat without an error, and without a spinner
+                // that would never end on the way out.
+                state = _retained(loading: false, syncing: false);
+                if (ref.read(currentSessionProvider) == sessionId) {
+                  ref.read(currentSessionProvider.notifier).select(null);
+                }
+                return;
               }
+              // Deleted elsewhere: say so once and keep what was on screen
+              // instead of a syncing overlay that can never be satisfied.
+              state = state.copyWith(error: appL10n.stateChatMissing, syncing: false, loading: false);
               return;
             }
-            _watchEnded = true;
             state = state.copyWith(
               error: chatErrorText(e, action: appL10n.stateChatSyncInterrupted),
               streamLost: true,
@@ -1303,6 +1459,9 @@ class ChatController extends Notifier<ChatState> {
 
   void _publish({bool freshSnapshot = false}) {
     _dirty = false;
+    // Captured before any async gap: a late publish from the retired Agent
+    // must not persist its window under the new Agent's cache key.
+    final cacheKey = _currentAgentKey();
     _moving.removeWhere((_, operation) => !_currentOperation(operation));
     final items = _transcript.items;
     final running = _transcript.running;
@@ -1353,7 +1512,7 @@ class ChatController extends Notifier<ChatState> {
       goal: _transcript.goal,
       clockSkew: _skew ?? Duration.zero,
     );
-    if (!running) _saveToCache();
+    if (!running && cacheKey == _currentAgentKey()) _saveToCache(cacheKey);
   }
 
   /// Our pending prompts with their inbox slot, plus prompts waiting in the
@@ -1423,38 +1582,81 @@ class ChatController extends Notifier<ChatState> {
     if (rest.length != _pending.length) _pending = List.unmodifiable(rest);
   }
 
-  /// One replay per controller lifetime: a restart loads the durable queue and
-  /// resubmits oldest first with the stored request ids (DSH dedups them). A
-  /// reconnect inside this run never replays: the original send is still live.
-  Future<void> _replayOutbox(DshClient client, Object listener, Object scope) async {
+  /// Resubmits durable sends with their original request ids (DSH dedups
+  /// them). The startup replay covers the whole queue; after that only prompts
+  /// explicitly queued while there was no client are targeted. A reconnect by
+  /// itself never replays ordinary in-flight sends.
+  Future<void> _replayOutbox(
+    DshClient client,
+    Object listener,
+    Object scope, {
+    required String key,
+    Set<String>? only,
+  }) async {
     final owner = ref;
-    final key = _pendingKey();
+    bool current() =>
+        owner.mounted &&
+        identical(listener, _listenOwner) &&
+        identical(scope, _syncScope) &&
+        identical(client, _client) &&
+        _currentAgentKey() == key;
+    // Claim before the first await: a second listen or an offline send that
+    // lands while the store is loading must not submit the same id twice.
+    if (only != null && only.isNotEmpty) _replayRequestedIds.addAll(only);
+    final outboxKey = _pendingKey();
     final PendingOutbox outbox;
-    final List<PendingSend> entries;
+    final List<PendingSend> loaded;
     try {
       outbox = await owner.read(pendingSendOutboxProvider.future);
-      entries = await outbox.store.load(key);
+      loaded = await outbox.store.load(outboxKey);
     } catch (e) {
       // No error log on this build: the outbox is best-effort and this path
       // must never block the chat.
+      _releaseReplayRequest(only, listener);
+      if (current()) _restartQueuedReplay(client, only ?? _offlineQueuedIds, startup: only == null);
       return;
     }
-    if (entries.isEmpty || !owner.mounted) return;
-    bool current() =>
-        owner.mounted && identical(listener, _listenOwner) && identical(scope, _syncScope) && identical(client, _client);
+    final entries = only == null ? loaded : loaded.where((e) => only.contains(e.requestId)).toList();
+    if (entries.isEmpty || !owner.mounted) {
+      _releaseReplayRequest(only, listener);
+      return;
+    }
+    if (!current()) {
+      _releaseReplayRequest(only, listener);
+      return;
+    }
+    // [_deliver] marks the hand-off. Setting it before the sync wait would make
+    // a replay that never reached this Host suppress every later retry.
     final ready = await _syncReady.future.timeout(const Duration(seconds: 10), onTimeout: () => false);
-    if (!current()) return;
-    if (!ready || !_canControl) {
-      await _surfaceRestarted(entries, outbox);
+    if (!current()) {
+      _releaseReplayRequest(only, listener);
       return;
     }
+    if (!ready || !_canControl) {
+      await _surfaceRestarted(entries, outbox, outboxKey: outboxKey);
+      _releaseReplayRequest(only, listener);
+      if (current()) {
+        _restartQueuedReplay(client, entries.map((e) => e.requestId).toSet(), startup: only == null);
+      }
+      return;
+    }
+    final retried = <String>{};
     for (final entry in entries) {
-      if (!current() || !_canControl) return;
-      _outboxKeys[entry.requestId] = key;
+      if (!current() || !_canControl) break;
+      _outboxKeys[entry.requestId] = outboxKey;
       try {
         final attachments = await outbox.attachmentsFor(entry);
-        if (!current()) return;
-        _replayHandedOff = true;
+        if (!current()) break;
+        final allowed = _offlineDeliveryAllowed[entry.requestId];
+        if (allowed != null && !allowed()) {
+          // The route prepared for this draft is gone. It can never be
+          // delivered, so drop it quietly instead of leaving a retry bubble.
+          _forgetOutbox([entry.requestId]);
+          _offlineQueuedIds.remove(entry.requestId);
+          _pending = List.unmodifiable(_pending.where((p) => p.requestId != entry.requestId));
+          if (ref.mounted) state = state.copyWith(pending: _placePending());
+          continue;
+        }
         if (!await send(
           entry.text,
           attachments: attachments,
@@ -1463,20 +1665,87 @@ class ChatController extends Notifier<ChatState> {
           mode: SendMode.queue,
           verbatim: true,
           replayRequestId: entry.requestId,
+          deliveryAllowed: allowed,
         )) {
-          if (current()) await _surfaceRestarted([entry], outbox);
-          return;
+          if (current()) await _surfaceRestarted([entry], outbox, outboxKey: outboxKey);
+          break;
         }
-    } catch (e) {
-        if (current()) await _surfaceRestarted([entry], outbox);
-        return;
+        // Submitted on this link: no longer an offline-only draft.
+        _offlineQueuedIds.remove(entry.requestId);
+        retried.add(entry.requestId);
+      } catch (e) {
+        if (current()) await _surfaceRestarted([entry], outbox, outboxKey: outboxKey);
+        break;
       }
     }
+    _releaseReplayRequest(only, listener);
+    for (final id in retried) {
+      _replayRestarts.remove(id);
+    }
+    if (current() && retried.length != entries.length) {
+      _restartQueuedReplay(
+        client,
+        entries.map((e) => e.requestId).toSet().difference(retried),
+        startup: only == null,
+      );
+    }
+  }
+
+  /// Releases this replay's claim only while its listener still owns the chat.
+  /// A new [_listen] already cleared the old claims and started its own replay;
+  /// letting the stale one erase the new marks would strand those sends.
+  void _releaseReplayRequest(Set<String>? ids, Object listener) {
+    if (ids == null || ids.isEmpty || !identical(listener, _listenOwner)) return;
+    _replayRequestedIds.removeAll(ids);
+  }
+
+  /// A replay that never reached a Host retries a few times on the same link.
+  /// Without this, a load hiccup or a sync that timed out leaves an explicitly
+  /// queued message waiting for a connection event that may never arrive.
+  void _restartQueuedReplay(
+    DshClient client,
+    Set<String> ids, {
+    bool startup = false,
+  }) {
+    if (ids.isEmpty || !ref.mounted || !identical(client, _client)) return;
+    final restartable = <String>{};
+    for (final id in ids) {
+      if (!startup && !_offlineQueuedIds.contains(id)) continue;
+      if (!startup && _replayRequestedIds.contains(id)) continue;
+      final count = (_replayRestarts[id] ?? 0) + 1;
+      if (count > 3) continue;
+      _replayRestarts[id] = count;
+      restartable.add(id);
+    }
+    if (restartable.isEmpty) return;
+    final owner = ref;
+    final token = _restartRef = Object();
+    Timer(const Duration(milliseconds: 400), () {
+      if (!owner.mounted || !identical(token, _restartRef) || !identical(client, _client)) return;
+      if (restartable.any(_replayRequestedIds.contains)) return;
+      unawaited(
+        _replayOutbox(client, _listenOwner, _syncScope, key: _currentAgentKey(), only: restartable),
+      );
+    });
+  }
+
+  /// Called by the offline send after its durable write. If the replacement
+  /// link arrived while that write was in flight, replay just this prompt;
+  /// otherwise the next [_listen] picks it up from the outbox.
+  void _kickTargetedReplay(DshClient client, String requestId) {
+    if (!ref.mounted || !identical(client, _client)) return;
+    if (!_offlineQueuedIds.contains(requestId) || _replayRequestedIds.contains(requestId)) return;
+    // [_replayOutbox] claims the id synchronously when it starts.
+    unawaited(_replayOutbox(client, _listenOwner, _syncScope, key: _currentAgentKey(), only: {requestId}));
   }
 
   /// No follow to replay into (yet): keep the entry on disk and show its draft
   /// as a retryable bubble, so a person is never left with an invisible send.
-  Future<void> _surfaceRestarted(Iterable<PendingSend> entries, PendingOutbox outbox) async {
+  Future<void> _surfaceRestarted(
+    Iterable<PendingSend> entries,
+    PendingOutbox outbox, {
+    required PendingSendKey outboxKey,
+  }) async {
     final seen = {for (final pending in _pending) pending.requestId};
     final echoed = _transcript.items.whereType<UserChatItem>().map((item) => item.requestId).toSet();
     final added = <PendingPrompt>[];
@@ -1485,7 +1754,7 @@ class ChatController extends Notifier<ChatState> {
       final List<DraftAttachment> attachments;
       try {
         attachments = await outbox.attachmentsFor(entry);
-    } catch (e) {
+      } catch (e) {
         // The draft bytes are gone: the entry cannot be re-sent from here.
         continue;
       }
@@ -1498,7 +1767,7 @@ class ChatController extends Notifier<ChatState> {
           failureSeq: 0,
         ),
       );
-      _outboxKeys[entry.requestId] = _pendingKey();
+      _outboxKeys[entry.requestId] = outboxKey;
       _restartIds.add(entry.requestId);
     }
     if (added.isEmpty || !ref.mounted) return;
@@ -1506,11 +1775,99 @@ class ChatController extends Notifier<ChatState> {
     state = state.copyWith(pending: _placePending(), notice: appL10n.chatRetryingAfterRestart);
   }
 
+  /// No client: keep the send anyway. The draft is written under the Agent
+  /// chosen *at this call*, stays visible as a pending bubble, and is replayed
+  /// by [_replayOutbox] as soon as that Agent's link is live. Nothing from the
+  /// old Agent is used, and no connection-lost overlay replaces the chat.
+  Future<bool> _sendOffline(
+    String body,
+    List<DraftAttachment> attachments, {
+    required SendMode mode,
+    required Future<bool> Function(String requestId)? beforeDeliver,
+    required bool Function()? deliveryAllowed,
+    required String? replayRequestId,
+    required PendingSendKey key,
+  }) async {
+    final content = _contentKey(body, attachments);
+    final cacheKey = _currentAgentKey();
+    final retrying = _unsettled?.content == content;
+    final requestId = replayRequestId ?? (retrying ? _unsettled!.requestId : _requestId());
+    _unsettled = null;
+    if (retrying) _dropEchoed(_transcript.items);
+    final running = state.running;
+    final effective = running ? (mode == SendMode.now ? SendMode.steer : mode) : SendMode.now;
+    _pending = List.unmodifiable([
+      ..._pending,
+      PendingPrompt(
+        requestId: requestId,
+        text: body,
+        time: DateTime.now(),
+        mode: effective,
+        attachments: List.unmodifiable(attachments),
+      ),
+    ]);
+    void dropBubble() {
+      _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
+      if (ref.mounted) {
+        state = state.copyWith(pending: _placePending(), syncing: false, streamLost: false);
+      }
+    }
+
+    state = state.copyWith(
+      pending: _placePending(),
+      clearError: true,
+      clearNotice: true,
+      syncing: false,
+      streamLost: false,
+    );
+    if (beforeDeliver != null) {
+      final go = await beforeDeliver(requestId);
+      if (!ref.mounted) return false;
+      if (!go) {
+        // The side channel let it go: nothing was queued, drop it quietly.
+        _forgetOutbox([requestId]);
+        dropBubble();
+        return false;
+      }
+    }
+    String? enqueueNotice;
+    try {
+      enqueueNotice = await _enqueuePending(requestId, body, attachments, key: key, replay: replayRequestId != null);
+    } catch (e) {
+      // A local durable-write failure is definite: do not leave a bubble that
+      // can never be delivered. Only uncertain *transport* failures are kept
+      // for a later replay, and no transport was touched here.
+      if (!ref.mounted) return false;
+      dropBubble();
+      state = state.copyWith(error: chatErrorText(e, action: appL10n.stateSendFailed));
+      return false;
+    }
+    if (!ref.mounted || _currentAgentKey() != cacheKey) {
+      // The person switched again while the write was in flight: that entry
+      // belongs to the retired Agent; never replay it into the new one.
+      _forgetOutbox([requestId]);
+      dropBubble();
+      return false;
+    }
+    _offlineQueuedIds.add(requestId);
+    if (deliveryAllowed != null) _offlineDeliveryAllowed[requestId] = deliveryAllowed;
+    state = state.copyWith(
+      pending: _placePending(),
+      notice: enqueueNotice,
+      clearError: true,
+      syncing: false,
+      streamLost: false,
+    );
+    // If the link came back during the durable write, start this one replay
+    // now; the next [_listen] handles the case where it did not.
+    final readyClient = _client;
+    if (readyClient != null) _kickTargetedReplay(readyClient, requestId);
+    return true;
+  }
+
   /// Sends [text] with [attachments]; resolves to `false` when it could not be
   /// delivered. Files are staged first (streamed as raw bytes on a Host with
   /// `/api/session/uploadFileBinary`, else `fileUploads/upload`); images go
-  /// inline.
-  ///
   /// inline.
   ///
   /// While a turn runs, [mode] picks how the message reaches the agent; when
@@ -1536,10 +1893,24 @@ class ChatController extends Notifier<ChatState> {
   }) async {
     final client = _client;
     final trimmed = text.trim();
-    if (client == null || (trimmed.isEmpty && attachments.isEmpty)) {
-      return false;
-    }
+    if (trimmed.isEmpty && attachments.isEmpty) return false;
     final body = verbatim ? text : trimmed;
+    // Capture the Agent key here, before any await: a queued send must stay
+    // with the Agent the person was looking at when they hit send.
+    final outboxKey = _pendingKey();
+    if (client == null) {
+      return _sendOffline(
+        body,
+        attachments,
+        mode: mode,
+        beforeDeliver: beforeDeliver,
+        // Remember the route check: a replay on a new link must not deliver a
+        // draft whose prepared source has since been replaced.
+        deliveryAllowed: deliveryAllowed,
+        replayRequestId: replayRequestId,
+        key: outboxKey,
+      );
+    }
     if (!_canControl && (mode == SendMode.interrupt || !await waitForSync())) return false;
     if (!ref.mounted || !identical(client, _client) || !_canControl) return false;
     final operation = _ChatOperation(ref, client, _syncScope);
@@ -1581,7 +1952,13 @@ class ChatController extends Notifier<ChatState> {
           return false;
         }
       }
-      enqueueNotice = await _enqueuePending(requestId, body, attachments, replay: replayRequestId != null);
+      enqueueNotice = await _enqueuePending(
+        requestId,
+        body,
+        attachments,
+        key: outboxKey,
+        replay: replayRequestId != null,
+      );
       if (!_currentOperation(operation)) return false;
       final receipts = await _stageFiles(operation, attachments);
       if (!_currentOperation(operation)) return false;
@@ -1669,14 +2046,9 @@ class ChatController extends Notifier<ChatState> {
       // A durable restart entry keeps its id only when the text is untouched:
       // DSH dedups by requestId, so reusing it for an edit would drop the edit.
       // An edited draft is a new submission, and its old durable copy must go.
-      final replayId =
-          _restartIds.contains(current.requestId) && edited == current.text ? current.requestId : null;
+      final replayId = _restartIds.contains(current.requestId) && edited == current.text ? current.requestId : null;
       if (replayId == null) _forgetOutbox([current.requestId]);
-      final ok = await send(
-        edited,
-        attachments: current.attachments,
-        replayRequestId: replayId,
-      );
+      final ok = await send(edited, attachments: current.attachments, replayRequestId: replayId);
       if (!_currentOperation(operation)) return false;
       if (ok) {
         _pending = List.unmodifiable(_pending.where((p) => p.requestId != current.requestId));
@@ -2325,6 +2697,13 @@ class CommandLog {
     final before = _byId.length;
     _byId.removeWhere(test);
     if (_byId.length != before) _view = null;
+  }
+
+  /// Commands belong to one Agent's transcript; a switch starts a new log.
+  void clear() {
+    if (_byId.isEmpty) return;
+    _byId.clear();
+    _view = const [];
   }
 
   /// Folds one durable event; other event types are ignored.
