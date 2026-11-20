@@ -1739,12 +1739,15 @@ class ChatController extends Notifier<ChatState> {
         // A different replay may have delivered this id while the timer waited.
         if (stale() || !_offlineQueuedIds.contains(id) || _replayRequestedIds.contains(id)) return;
         final PendingOutbox box;
+        final List<PendingSend> durable;
         try {
           box = await owner.read(pendingSendOutboxProvider.future);
+          durable = await box.store.load(_pendingKey());
         } catch (_) {
+          // Best-effort retry: a missing or damaged outbox must not escape an
+          // async timer callback as an unhandled error.
           return;
         }
-        final durable = await box.store.load(_pendingKey());
         if (stale() || !_offlineQueuedIds.contains(id) || _replayRequestedIds.contains(id)) return;
         if (!durable.any((e) => e.requestId == id)) {
           _offlineQueuedIds.remove(id);

@@ -3,7 +3,10 @@
 // Also covers the Agent-switch silent window: only the active Host is muted,
 // real failures stay visible, and notice/error banners survive.
 
+import 'dart:async';
+
 import 'package:dsh_app/l10n/l10n.dart';
+import 'package:dsh_app/state/agent_selection_state.dart' show activeAgentProvider, agentSelectionProvider;
 import 'package:dsh_app/state/attachments.dart';
 import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
@@ -11,6 +14,7 @@ import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/widgets/attachments.dart';
 import 'package:dsh_app/ui/remote/host_status.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -22,6 +26,30 @@ import 'support/harness.dart';
 class _AlwaysSilent extends AgentSwitchReconnectController {
   @override
   bool build() => true;
+}
+
+class _MutableConnection extends Notifier<AsyncValue<HostConnection?>> {
+  @override
+  AsyncValue<HostConnection?> build() => const AsyncData(null);
+
+  void set(AsyncValue<HostConnection?> next) => state = next;
+}
+
+final _connectionStateProvider = NotifierProvider<_MutableConnection, AsyncValue<HostConnection?>>(
+  _MutableConnection.new,
+);
+
+/// An image picker that stays open until the test hands back its result.
+class _DeferredPicker extends FakePicker {
+  final _picked = Completer<List<DraftAttachment>>();
+
+  @override
+  Future<List<DraftAttachment>> pickImages({required int limit}) {
+    calls.add('images:$limit');
+    return _picked.future;
+  }
+
+  void deliver(List<DraftAttachment> images) => _picked.complete(images);
 }
 
 /// Active Host for the non-active-Host test.
@@ -103,6 +131,46 @@ void main() {
     expect(find.text('配图'), findsNothing);
   });
 
+  testWidgets('a pick kept open until the target client arrives is not dropped', (tester) async {
+    final picker = _DeferredPicker();
+    final harness = ChatHarness(
+      session: 's',
+      connected: false,
+      picker: picker,
+      extra: [agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new)],
+    );
+    await tester.pumpWidget(
+      testApp(
+        ProviderScope(
+          overrides: [
+            activeConnectionProvider.overrideWith((ref) => ref.watch(_connectionStateProvider)),
+          ],
+          child: const ChatScreen(),
+        ),
+        overrides: harness.overrides,
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    await tester.tap(find.byType(AttachButton));
+    await pumpFrames(tester);
+    await tester.tap(find.text('相册'));
+    await pumpFrames(tester);
+    expect(picker.calls, contains('images:9'));
+
+    // The Agent-switch target connects while the system picker is still open.
+    final container = ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
+    container.read(_connectionStateProvider.notifier).set(AsyncData<HostConnection?>(fakeConnection));
+    await pumpFrames(tester);
+
+    picker.deliver([DraftAttachment.sniff('cat.png', tinyPng)]);
+    await pumpFrames(tester);
+
+    final tray = find.byType(ComposerTray);
+    expect(tray, findsOneWidget);
+    expect(tester.widget<ComposerTray>(tray).items, hasLength(1));
+  });
+
   // ── Agent-switch silent window regressions ─────────────────────────────────
 
   test('silentConnect masks connecting only, never reconnecting or failed', () {
@@ -168,6 +236,61 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text(sentinel), findsOneWidget);
+  });
+
+  testWidgets('an error during an Agent switch ends the silent window, and retry shows connecting', (tester) async {
+    _testActive = HostRef.relay('relay');
+    addTearDown(() => _testActive = HostRef.local);
+    final conn = _MutableConnection();
+    final harness = ChatHarness(
+      session: 's',
+      connected: false,
+      extra: [
+        _connectionStateProvider.overrideWith(() => conn),
+        activeHostProvider.overrideWith(_FixedActiveHost.new),
+      ],
+    );
+    await tester.pumpWidget(
+      testApp(
+        ProviderScope(
+          overrides: [activeConnectionProvider.overrideWith((ref) => ref.watch(_connectionStateProvider))],
+          child: const ChatScreen(),
+        ),
+        overrides: harness.overrides,
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    final container = ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
+
+    conn.set(AsyncData<HostConnection?>(
+      HostConnection(
+        client: fakeConnection.client,
+        isLocal: false,
+        kind: HostKind.relay,
+        hostId: 'relay',
+        agent: RemoteAgent.dsh,
+      ),
+    ));
+    await pumpFrames(tester);
+
+    // Switch the Agent for the same Host, exactly as a user selecting a
+    // different Agent in settings would. This is what triggers
+    // agentSwitchReconnectProvider in production.
+    container.read(agentSelectionProvider.notifier).select('relay', RemoteAgent.codex);
+    await pumpFrames(tester);
+    expect(container.read(activeAgentProvider), RemoteAgent.codex);
+    expect(container.read(agentSwitchReconnectProvider), isTrue);
+
+    // The target connection fails. That must clear the silent window instead
+    // of remaining "已连接" while the next retry is merely loading.
+    conn.set(AsyncError<HostConnection?>(StateError('boom'), StackTrace.current));
+    await pumpFrames(tester);
+    expect(container.read(agentSwitchReconnectProvider), isFalse);
+
+    conn.set(const AsyncLoading<HostConnection?>());
+    await pumpFrames(tester);
+    expect(container.read(agentSwitchReconnectProvider), isFalse);
+    expect(find.text(appL10n.chatConnecting), findsOneWidget);
   });
 
   testWidgets('a notice is not swallowed by the silent window', (tester) async {

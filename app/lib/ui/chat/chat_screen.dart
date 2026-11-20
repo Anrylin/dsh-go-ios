@@ -16,6 +16,7 @@ import '../../runtime/local_footprint.dart' show RuntimeMissing;
 import '../../runtime/runtime_bridge.dart' show RuntimePhase;
 import '../../runtime/runtime_state.dart' show localRuntimeProvider;
 import '../../state/agent_capabilities_state.dart';
+import '../../state/agent_selection_state.dart' show activeAgentProvider;
 import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/attachments.dart';
 import '../../state/balance_state.dart';
@@ -794,18 +795,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final scope = _draftScope;
     final generation = client?.mux.generation;
     final readyNumber = client?.mux.lastReadyGenerationNumber;
-    var hostRetired = false;
-    bool ownsDraft() =>
+    final host = ref.read(activeHostProvider);
+    final agent = ref.read(activeAgentProvider);
+    final sessionId = ref.read(currentSessionProvider);
+    var retired = false;
+
+    bool sameTarget() =>
         mounted &&
-        !hostRetired &&
-        identical(_draftScope, scope) &&
-        identical(ref.read(activeConnectionProvider).value?.client, client) &&
-        identical(client?.mux.generation, generation) &&
-        client?.mux.lastReadyGenerationNumber == readyNumber;
+        !retired &&
+        ref.read(activeHostProvider) == host &&
+        ref.read(activeAgentProvider) == agent &&
+        ref.read(currentSessionProvider) == sessionId;
+
+    bool ownsDraft() {
+      if (!sameTarget()) return false;
+      final current = ref.read(activeConnectionProvider).value?.client;
+      if (identical(current, client)) {
+        return identical(_draftScope, scope) &&
+            identical(client?.mux.generation, generation) &&
+            client?.mux.lastReadyGenerationNumber == readyNumber;
+      }
+      // The target connection can arrive while the system picker is open (an
+      // Agent switch publishes null -> target client). Same Host, Agent and
+      // session means this is the connection the pick was waiting for: keep
+      // the picked files instead of silently dropping them.
+      return true;
+    }
+
     // A derived connection can coalesce A -> B -> A before its next read.
-    // Observe the selected Host directly for this picker attempt only.
+    // Observe the route directly for this picker attempt only.
     final hostChanges = ref.listenManual(activeHostProvider, (previous, next) {
-      if (previous != next) hostRetired = true;
+      if (previous != next) retired = true;
+    });
+    final agentChanges = ref.listenManual(activeAgentProvider, (previous, next) {
+      if (previous != next) retired = true;
+    });
+    final sessionChanges = ref.listenManual(currentSessionProvider, (previous, next) {
+      if (previous != next) retired = true;
     });
     try {
       final choice = await showPlusPanel(
@@ -853,6 +879,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _addDrafts(picked.attachments, problem: picked.problem);
     } finally {
       hostChanges.close();
+      agentChanges.close();
+      sessionChanges.close();
     }
   }
 
