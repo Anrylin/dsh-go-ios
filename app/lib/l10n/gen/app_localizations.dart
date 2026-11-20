@@ -12980,6 +12980,12 @@ abstract class L10n {
   /// **'AI 先出方案，不改文件'**
   String get hubSessionPlanHint;
 
+  /// No description provided for @hubSessionPlanModeUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个引擎不支持计划模式'**
+  String get hubSessionPlanModeUnavailable;
+
   /// No description provided for @hubSessionTodos.
   ///
   /// In zh, this message translates to:
@@ -28255,6 +28261,30 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'AI 正忙，稍后再试'**
   String get stateChatAgentBusy;
+
+  /// No description provided for @stateChatCodexThreadBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一端正在操作这个 Codex 对话，等它结束后会自动重试'**
+  String get stateChatCodexThreadBusy;
+
+  /// No description provided for @stateChatCodexUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'CodeX 暂时用不了，稍后再试'**
+  String get stateChatCodexUnavailable;
+
+  /// No description provided for @stateChatInvalidRequest.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次请求的内容引擎没看懂，换个说法再试'**
+  String get stateChatInvalidRequest;
+
+  /// No description provided for @stateChatWorkspaceMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个工作区已经不在了'**
+  String get stateChatWorkspaceMissing;
 
   /// No description provided for @stateChatWriterHeld.
   ///

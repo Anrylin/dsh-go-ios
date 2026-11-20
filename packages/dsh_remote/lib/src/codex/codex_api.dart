@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:dsh_client/dsh_client.dart' show errorDigestSuffix;
 import 'package:dsh_remote/src/channel/rpc_client.dart';
 import 'package:dsh_remote/src/util/bytes.dart';
 
@@ -97,8 +98,10 @@ class CodexAppException implements Exception {
 
   bool get isTransportClosed => code == 'TRANSPORT_CLOSED' || code == 'CLIENT_CLOSED';
 
+  /// Appends the whitelisted, redacted [details] digest so a log line names
+  /// the failing field (`field=images; reason=…`) instead of only the code.
   @override
-  String toString() => 'CodexAppException($code): $message';
+  String toString() => 'CodexAppException($code): $message${errorDigestSuffix(details)}';
 }
 
 /// A Host response the client cannot make sense of (shape violation). The

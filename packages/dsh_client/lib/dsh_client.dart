@@ -24,6 +24,7 @@ export 'src/dsh_go_api.dart';
 export 'src/dsbot_api.dart';
 export 'src/engine_settings_api.dart';
 export 'src/editors_api.dart';
+export 'src/error_digest.dart';
 export 'src/errors.dart';
 export 'src/features_api.dart';
 export 'src/files_api.dart';

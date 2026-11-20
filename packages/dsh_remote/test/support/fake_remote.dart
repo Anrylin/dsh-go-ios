@@ -778,6 +778,10 @@ class FakeRemoteHost {
   /// Unary handlers by endpoint; default: `gateway/not-found`.
   final Map<String, Map<String, Object?> Function(Map<String, Object?> args)> handlers = {};
 
+  /// Raw Codex App Server envelopes by inner method (`codex.app.call`).
+  /// Lets tests observe what the virtual Harness sends on `session/prompt`.
+  final Map<String, Map<String, Object?> Function(Map<String, Object?> params)> codexAppHandlers = {};
+
   /// Called for each non-`$events` stream a client opens.
   void Function(FakeHostStream stream)? onOpen;
 
@@ -1059,6 +1063,11 @@ class FakeRemoteHost {
         if (stallDescribe) return;
         if (describeUnsupported) return reject('METHOD_NOT_FOUND', 'Unknown method.');
         respond({'capabilities': capabilities});
+      case 'codex.app.call':
+        final inner = params['method']! as String;
+        final handler = codexAppHandlers[inner];
+        if (handler == null) return reject('METHOD_NOT_FOUND', 'Unknown method $inner.');
+        respond(handler((params['params'] as Map?)?.cast<String, Object?>() ?? const <String, Object?>{}));
       case 'harness.remote.call':
         final endpoint = params['endpoint']! as String;
         if (!harnessRemoteAllowlist.contains(endpoint)) {

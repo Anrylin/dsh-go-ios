@@ -1371,6 +1371,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 singleQuestion: s.singleQuestion != null,
                 model: s.model,
                 error: s.error,
+                errorCause: s.errorCause,
                 defaultModelSaveFailed: s.defaultModelSaveFailed,
                 notice: s.notice,
                 autoApprove: s.autoApprove,
@@ -1744,6 +1745,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                             padding: const EdgeInsets.only(bottom: 8),
                                             child: ErrorBanner(
                                               message: error!,
+                                              details: chatErrorDetails(chat?.errorCause),
                                               onDismiss: () {
                                                 if (sessionId == null) {
                                                   setState(() => _localError = null);

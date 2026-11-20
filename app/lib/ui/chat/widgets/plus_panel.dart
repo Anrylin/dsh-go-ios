@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../state/agent_capabilities_state.dart';
 import '../../../state/chat_state.dart';
 import '../../../state/connection_state.dart';
 import '../../../state/features_state.dart';
@@ -222,6 +223,9 @@ class _ThisChatCardState extends ConsumerState<_ThisChatCard> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final modes = ref.watch(sessionModesProvider(widget.sessionId));
+    // 计划模式 is DSH's own: the CodeX and AGY virtual harnesses answer `/plan`
+    // with FEATURE_NOT_SUPPORTED, so offering the switch there is a trap.
+    final planSupported = ref.watch(agentCapabilitiesProvider).planGoals;
     if (_plan == modes.plan) _plan = null;
     final plan = _plan ?? modes.plan;
     return ListPageCard(
@@ -239,8 +243,14 @@ class _ThisChatCardState extends ConsumerState<_ThisChatCard> {
         MergeSemantics(
           child: ListPageRow(
             title: l10n.hubSessionPlanMode,
-            onTap: _busy ? null : () => unawaited(_togglePlan(!plan)),
-            trailing: Switch(value: plan, onChanged: _busy ? null : (v) => unawaited(_togglePlan(v))),
+            // Say why it is off rather than hiding the row: a switch that
+            // silently disappears reads as a bug on a Host that has it.
+            subtitle: planSupported ? null : l10n.hubSessionPlanModeUnavailable,
+            onTap: !planSupported || _busy ? null : () => unawaited(_togglePlan(!plan)),
+            trailing: Switch(
+              value: planSupported && plan,
+              onChanged: !planSupported || _busy ? null : (v) => unawaited(_togglePlan(v)),
+            ),
           ),
         ),
       ],

@@ -20,6 +20,7 @@
   "hubSessionPlanMode": "计划模式",
   "hubSessionPlanSwitching": "正在切换计划模式",
   "hubSessionPlanHint": "AI 先出方案，不改文件",
+  "hubSessionPlanModeUnavailable": "这个引擎不支持计划模式",
   "hubSessionTodos": "待办",
   "hubSessionNotStarted": "未开始",
   "hubSessionTurnUsage": "每轮用量",
