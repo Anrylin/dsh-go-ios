@@ -30056,6 +30056,18 @@ abstract class L10n {
   /// **'缓存'**
   String get statsCache;
 
+  /// 已完成输出的整段平均速率；正在跑的那一步不计入
+  ///
+  /// In zh, this message translates to:
+  /// **'平均 {rate} tok/s'**
+  String statsAvgRate(String rate);
+
+  /// No description provided for @statsRateSettled.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出已结束，显示最后速率'**
+  String get statsRateSettled;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

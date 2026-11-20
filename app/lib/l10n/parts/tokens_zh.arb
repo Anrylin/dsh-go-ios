@@ -17,5 +17,15 @@
       }
     }
   },
-  "statsCache": "缓存"
+  "statsCache": "缓存",
+  "statsAvgRate": "平均 {rate} tok/s",
+  "@statsAvgRate": {
+    "description": "已完成输出的整段平均速率；正在跑的那一步不计入",
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "statsRateSettled": "输出已结束，显示最后速率"
 }

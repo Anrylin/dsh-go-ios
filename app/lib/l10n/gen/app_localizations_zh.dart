@@ -16434,6 +16434,14 @@ class L10nZh extends L10n {
   String get statsCache => '缓存';
 
   @override
+  String statsAvgRate(String rate) {
+    return '平均 $rate tok/s';
+  }
+
+  @override
+  String get statsRateSettled => '输出已结束，显示最后速率';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override
