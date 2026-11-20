@@ -493,9 +493,12 @@ class _EdgeFade extends StatelessWidget {
 
 /// A single muted line at the top of the drawer when the app has no host
 /// connection at all — the only place in the entire app that mentions network
-/// state. The chat header and composer never echo it.
+/// state. The chat header and composer never echo it. A definite connect
+/// failure (AsyncError) is offline too: without it a broken host would never
+/// get the one line.
 Widget _globalOfflineBanner(BuildContext context, WidgetRef ref) {
-  final offline = ref.watch(activeConnectionProvider.select((c) => c.hasValue && c.value == null));
+  final connection = ref.watch(activeConnectionProvider);
+  final offline = connection.hasError || (connection.hasValue && connection.value == null);
   if (!offline) return const SizedBox(width: double.infinity);
   final theme = Theme.of(context);
   return Padding(

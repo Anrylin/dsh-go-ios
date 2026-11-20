@@ -7642,9 +7642,8 @@
       }
     }
   },
-  "readListUpdating": "更新中 · 上次结果",
-  "readListOffline": "离线 · 上次结果",
-  "readListFailed": "未更新 · 上次结果",
+  "readListUpdating": "更新中",
+  "readListFailed": "未更新",
   "remoteStartupSection": "启动",
   "remoteAutoConnectOnStartup": "连接上次使用的主机",
   "remoteAutoConnectOnStartupHint": "关闭后从本机开始",

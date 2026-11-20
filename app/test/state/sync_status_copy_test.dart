@@ -19,20 +19,21 @@ void main() {
   test('read list headings never append 上次结果, and offline adds no second notice', () {
     expect(readListStatusText(ReadListStatus.current), '');
     expect(readListStatusText(ReadListStatus.offline), '');
-    expect(readListStatusText(ReadListStatus.updating), '更新中 · 上次结果');
-    expect(readListStatusText(ReadListStatus.failed), '未更新 · 上次结果');
+    // 需求⑩: no 「上次结果」 negative wording anywhere.
+    expect(readListStatusText(ReadListStatus.updating), '更新中');
+    expect(readListStatusText(ReadListStatus.failed), '未更新');
     expect(readListHeading('模型', ReadListStatus.offline), '模型');
     expect(readListHeading('模型', ReadListStatus.current), '模型');
-    // Offline alone is silent; updating/failed keep their original copy.
-    expect(readListHeading('模型', ReadListStatus.updating), '模型 · 更新中 · 上次结果');
-    expect(readListHeading('模型', ReadListStatus.failed), '模型 · 未更新 · 上次结果');
+    // Offline alone is silent; updating/failed keep a single quiet word.
+    expect(readListHeading('模型', ReadListStatus.updating), '模型 · 更新中');
+    expect(readListHeading('模型', ReadListStatus.failed), '模型 · 未更新');
   });
 
   test('English read list copy keeps updating/failed and drops offline noise', () {
     AppLocale.use(AppLocale.en);
     expect(readListStatusText(ReadListStatus.offline), '');
-    expect(readListStatusText(ReadListStatus.failed), 'Not updated · previous results');
-    expect(readListStatusText(ReadListStatus.updating), 'Updating · previous results');
+    expect(readListStatusText(ReadListStatus.failed), 'Not updated');
+    expect(readListStatusText(ReadListStatus.updating), 'Updating');
   });
 
   test('model chip stays optimistic with no live catalog', () {

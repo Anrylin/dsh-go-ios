@@ -12257,13 +12257,10 @@ class L10nZh extends L10n {
   }
 
   @override
-  String get readListUpdating => '更新中 · 上次结果';
+  String get readListUpdating => '更新中';
 
   @override
-  String get readListOffline => '离线 · 上次结果';
-
-  @override
-  String get readListFailed => '未更新 · 上次结果';
+  String get readListFailed => '未更新';
 
   @override
   String get remoteStartupSection => '启动';

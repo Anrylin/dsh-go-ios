@@ -22481,19 +22481,13 @@ abstract class L10n {
   /// No description provided for @readListUpdating.
   ///
   /// In zh, this message translates to:
-  /// **'更新中 · 上次结果'**
+  /// **'更新中'**
   String get readListUpdating;
-
-  /// No description provided for @readListOffline.
-  ///
-  /// In zh, this message translates to:
-  /// **'离线 · 上次结果'**
-  String get readListOffline;
 
   /// No description provided for @readListFailed.
   ///
   /// In zh, this message translates to:
-  /// **'未更新 · 上次结果'**
+  /// **'未更新'**
   String get readListFailed;
 
   /// No description provided for @remoteStartupSection.

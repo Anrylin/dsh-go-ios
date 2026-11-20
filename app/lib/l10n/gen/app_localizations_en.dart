@@ -12872,13 +12872,10 @@ class L10nEn extends L10n {
   }
 
   @override
-  String get readListUpdating => 'Updating · previous results';
+  String get readListUpdating => 'Updating';
 
   @override
-  String get readListOffline => 'Offline · previous results';
-
-  @override
-  String get readListFailed => 'Not updated · previous results';
+  String get readListFailed => 'Not updated';
 
   @override
   String get remoteStartupSection => 'On launch';
