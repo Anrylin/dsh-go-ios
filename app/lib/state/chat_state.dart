@@ -890,32 +890,51 @@ class ChatController extends Notifier<ChatState> {
   /// The loaded conversation without its live parts (running, approvals,
   /// questions), across a new or a lost connection.
   ///
-  /// An unspecified error keeps whatever the state already carries, so a cache
-  /// seed or an Agent switch does not erase a send failure's 「详情」.
-  ChatState _retained({required bool loading, bool syncing = true}) => ChatState(
-    items: _transcript.items,
-    title: _transcript.title,
-    turns: _transcript.turns,
-    todos: _transcript.todos,
-    goal: _transcript.goal,
-    hasMoreHistory: _transcript.hasMoreHistory,
-    loading: loading,
-    // While the replacement Agent connects the cached window is authoritative.
-    // A "syncing" state here would cover it with a spinner and disable the
-    // composer even though sending is already possible (it queues).
-    syncing: syncing,
-    // The send-failure banner (headline and 「详情」) must survive a cache seed
+  /// A send failure's banner (headline and 「详情」) must survive a cache seed
+  /// or a retained rebuild, but during `build()` the provider state does not
+  /// exist yet, so the caller passes [error]/[errorCause] in; a `null` error
+  /// with [keepError] keeps the last written one instead. `_publish()` clears
+  /// both only on a fresh snapshot.
+  ChatState _retained({required bool loading, bool syncing = true}) {
+    // A send failure's banner (headline and 「详情」) must survive a cache seed
     // or a retained rebuild; _publish() clears it only on a fresh snapshot.
-    error: state.error,
-    errorCause: state.errorCause,
-    commands: _commandList(),
-    model: _model,
-    defaultModelSaveFailed: _defaultModelSaveFailed,
-    pending: _placePending(),
-    autoApprove: _autoApprove,
-    autoAnswered: _autoAnswered,
-    clockSkew: _skew ?? Duration.zero,
-  );
+    // During build() the provider state does not exist yet (_currentError
+    // returns null then), and there is nothing to keep.
+    final banner = _currentError;
+    return ChatState(
+      items: _transcript.items,
+      title: _transcript.title,
+      turns: _transcript.turns,
+      todos: _transcript.todos,
+      goal: _transcript.goal,
+      hasMoreHistory: _transcript.hasMoreHistory,
+      loading: loading,
+      // While the replacement Agent connects the cached window is authoritative.
+      // A "syncing" state here would cover it with a spinner and disable the
+      // composer even though sending is already possible (it queues).
+      syncing: syncing,
+      error: banner.error,
+      errorCause: banner.cause,
+      commands: _commandList(),
+      model: _model,
+      defaultModelSaveFailed: _defaultModelSaveFailed,
+      pending: _placePending(),
+      autoApprove: _autoApprove,
+      autoAnswered: _autoAnswered,
+      clockSkew: _skew ?? Duration.zero,
+    );
+  }
+
+  /// Reads the banner without breaking during `build()`, where the provider
+  /// state does not exist yet ("uninitialized provider" StateError) and there
+  /// is nothing to keep anyway.
+  ({String? error, Object? cause}) get _currentError {
+    try {
+      return (error: state.error, cause: state.errorCause);
+    } on StateError {
+      return (error: null, cause: null);
+    }
+  }
 
   /// Host key shared by the cache path and the entry: a display-name change
   /// must not lose the window.
