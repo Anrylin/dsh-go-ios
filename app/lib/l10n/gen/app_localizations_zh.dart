@@ -4273,6 +4273,9 @@ class L10nZh extends L10n {
   String get chatJumpToQuestion => '上一条提问';
 
   @override
+  String get chatPreparingEllipsis => '准备中…';
+
+  @override
   String get commonCancel => '取消';
 
   @override
@@ -15120,6 +15123,9 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get shellNetworkUnavailable => '无法连接到网络';
+
+  @override
   String starPromptTitle(int hours) {
     String _temp0 = intl.Intl.pluralLogic(
       hours,
@@ -15451,9 +15457,6 @@ class L10nZh extends L10n {
 
   @override
   String get stateChatAgentBusy => 'AI 正忙，稍后再试';
-
-  @override
-  String get stateChatCodexThreadBusy => '另一端正在操作这个 Codex 对话，等它结束后会自动重试';
 
   @override
   String get stateChatCodexUnavailable => 'CodeX 暂时用不了，稍后再试';
@@ -18021,6 +18024,9 @@ class L10nZh extends L10n {
 
   @override
   String get viewUiDialectNote => '在网页版查看';
+
+  @override
+  String get viewModelRefreshing => '正在获取最新模型';
 
   @override
   String get voiceSettingsTitle => '语音输入';

@@ -4547,6 +4547,9 @@ class L10nEn extends L10n {
   String get chatJumpToQuestion => 'Previous question';
 
   @override
+  String get chatPreparingEllipsis => 'One moment…';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override
@@ -15951,6 +15954,9 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get shellNetworkUnavailable => 'Can’t connect to the network';
+
+  @override
   String starPromptTitle(int hours) {
     String _temp0 = intl.Intl.pluralLogic(
       hours,
@@ -16283,10 +16289,6 @@ class L10nEn extends L10n {
 
   @override
   String get stateChatAgentBusy => 'AI is busy. Try again later.';
-
-  @override
-  String get stateChatCodexThreadBusy =>
-      'The other end is working in this Codex chat. It will retry when that finishes.';
 
   @override
   String get stateChatCodexUnavailable => 'CodeX is unavailable. Try again later.';
@@ -19039,6 +19041,9 @@ class L10nEn extends L10n {
 
   @override
   String get viewUiDialectNote => 'Shown in DSH Web';
+
+  @override
+  String get viewModelRefreshing => 'Getting the latest models';
 
   @override
   String get voiceSettingsTitle => 'Voice input';

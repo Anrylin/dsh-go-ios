@@ -14,6 +14,7 @@ import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/widgets/attachments.dart';
 import 'package:dsh_app/ui/remote/host_status.dart';
+import 'package:dsh_client/dsh_client.dart';
 import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -295,7 +296,9 @@ void main() {
     conn.set(const AsyncLoading<HostConnection?>());
     await pumpFrames(tester);
     expect(container.read(agentSwitchReconnectProvider), isFalse);
-    expect(find.text(appL10n.chatConnecting), findsOneWidget);
+    // The header never spells out connectivity; the composer stays neutral.
+    expect(find.text(appL10n.chatConnecting), findsNothing);
+    expect(find.text(appL10n.chatPreparingEllipsis), findsOneWidget);
   });
 
   testWidgets('a notice is not swallowed by the silent window', (tester) async {
@@ -313,6 +316,36 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text(sentinel), findsOneWidget);
+  });
+
+  testWidgets('a syncing chat shows the header state only, never a bottom sync card', (tester) async {
+    final harness = ChatHarness(
+      session: 's',
+      states: {
+        's': ChatState(
+          loading: false,
+          syncing: true,
+          items: [
+            UserChatItem(seq: 1, time: DateTime(2026, 10, 24), text: '旧内容', images: const [], files: const []),
+          ],
+        ),
+      },
+    );
+    await tester.pumpWidget(
+      testApp(
+        const ChatScreen(),
+        overrides: harness.overrides,
+      ),
+    );
+    // The busy status dot breathes forever while syncing, so pump fixed
+    // frames instead of pumpAndSettle.
+    await pumpFrames(tester);
+
+    // The header keeps 「正在同步对话」.
+    expect(find.text(appL10n.stateChatSynchronizing), findsOneWidget);
+    // The bottom banner area has no sync card, retry key, or quiet strip.
+    expect(find.text(appL10n.stateChatSyncInterrupted), findsNothing);
+    expect(find.text(appL10n.stateChatSyncRetry), findsNothing);
   });
 
   testWidgets('typing during an Agent switch still sends to the target Agent', (tester) async {
@@ -351,7 +384,8 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    expect(find.text(appL10n.chatConnectToSend), findsOneWidget);
+    expect(find.text(appL10n.chatConnectToSend), findsNothing);
+    expect(find.text(appL10n.chatPreparingEllipsis), findsOneWidget);
     expect(harness.controllers, isEmpty);
   });
 }

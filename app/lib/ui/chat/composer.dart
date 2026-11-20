@@ -316,10 +316,10 @@ class _ComposerState extends State<Composer> {
               VoicePhase.listening => l10n.chatListeningEllipsis,
               VoicePhase.transcribing => l10n.chatTranscribingEllipsis,
               _ =>
-                !widget.connected
-                    ? l10n.chatConnectToSend
-                    : !widget.sessionReady
-                    ? l10n.stateChatSynchronizing
+                (!widget.connected || !widget.sessionReady)
+                    // No negative connection wording here: the drawer owns the
+                    // single offline line, and a stale chat is just catching up.
+                    ? l10n.chatPreparingEllipsis
                     : widget.waitHint ??
                           (widget.running && !waiting
                               ? l10n.chatGeneratingSteerHint

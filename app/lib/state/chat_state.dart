@@ -1602,11 +1602,12 @@ class ChatController extends Notifier<ChatState> {
               state = state.copyWith(error: appL10n.stateChatMissing, syncing: false, loading: false);
               return;
             }
-            state = state.copyWith(
-              error: chatErrorText(e, action: appL10n.stateChatSyncInterrupted),
-              streamLost: true,
-              loading: false,
-            );
+            // Sync failures are transport noise: never paint them as an
+            // error card. Keep the cached transcript readable, keep the
+            // `streamLost` flag for control readiness, and let the silent
+            // bounded retry below catch up. A real send-failure banner
+            // (error/errorCause) must survive, so no clearError here.
+            state = state.copyWith(streamLost: true, loading: false);
             _scheduleWatchRetry(client, pulse, current);
           },
           onDone: () {
@@ -1633,7 +1634,10 @@ class ChatController extends Notifier<ChatState> {
     _watchRetryTimer?.cancel();
     _watchRetryTimer = Timer(const Duration(milliseconds: 400), () {
       if (!current() || !_watchEnded) return;
-      state = state.copyWith(clearError: true, streamLost: false);
+      // Reopen the follow without touching any send-failure banner: sync
+      // failures never own the error slot, so clearing it here would erase a
+      // real `error`/`errorCause` that belongs to a failed submission.
+      state = state.copyWith(streamLost: false);
       _listen(client, pulse);
     });
   }

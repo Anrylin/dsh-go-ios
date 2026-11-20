@@ -267,5 +267,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "shellNetworkUnavailable": "Can’t connect to the network"
 }

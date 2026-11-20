@@ -7838,6 +7838,12 @@ abstract class L10n {
   /// **'上一条提问'**
   String get chatJumpToQuestion;
 
+  /// No description provided for @chatPreparingEllipsis.
+  ///
+  /// In zh, this message translates to:
+  /// **'准备中…'**
+  String get chatPreparingEllipsis;
+
   /// No description provided for @commonCancel.
   ///
   /// In zh, this message translates to:
@@ -27662,6 +27668,12 @@ abstract class L10n {
   /// **'在「{path}」里调整'**
   String shellQuickPanelHint(String path);
 
+  /// No description provided for @shellNetworkUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法连接到网络'**
+  String get shellNetworkUnavailable;
+
   /// The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.
   ///
   /// In zh, this message translates to:
@@ -28309,12 +28321,6 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'AI 正忙，稍后再试'**
   String get stateChatAgentBusy;
-
-  /// No description provided for @stateChatCodexThreadBusy.
-  ///
-  /// In zh, this message translates to:
-  /// **'另一端正在操作这个 Codex 对话，等它结束后会自动重试'**
-  String get stateChatCodexThreadBusy;
 
   /// No description provided for @stateChatCodexUnavailable.
   ///
@@ -32671,6 +32677,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'在网页版查看'**
   String get viewUiDialectNote;
+
+  /// No description provided for @viewModelRefreshing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在获取最新模型'**
+  String get viewModelRefreshing;
 
   /// No description provided for @voiceSettingsTitle.
   ///

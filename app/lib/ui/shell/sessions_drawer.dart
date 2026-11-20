@@ -197,6 +197,14 @@ class SessionsDrawer extends ConsumerWidget {
         alignment: Alignment.topCenter,
         child: const DrawerFilterBar(),
       ),
+      // The one global-offline line for the entire app, never repeated
+      // inside a chat.
+      SmoothSize(
+        duration: quick,
+        curve: AppMotion.std,
+        alignment: Alignment.topCenter,
+        child: _globalOfflineBanner(context, ref),
+      ),
     ];
     final list = _EdgeFade(
       child: _SessionList(onClose: onClose, now: now),
@@ -481,6 +489,31 @@ class _EdgeFade extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// A single muted line at the top of the drawer when the app has no host
+/// connection at all — the only place in the entire app that mentions network
+/// state. The chat header and composer never echo it.
+Widget _globalOfflineBanner(BuildContext context, WidgetRef ref) {
+  final offline = ref.watch(activeConnectionProvider.select((c) => c.hasValue && c.value == null));
+  if (!offline) return const SizedBox(width: double.infinity);
+  final theme = Theme.of(context);
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+    child: Semantics(
+      liveRegion: true,
+      child: Row(
+        children: [
+          Icon(AppIcons.disconnected, size: 14, color: theme.colorScheme.outline),
+          const SizedBox(width: 6),
+          Text(
+            context.l10n.shellNetworkUnavailable,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SessionList extends ConsumerWidget {

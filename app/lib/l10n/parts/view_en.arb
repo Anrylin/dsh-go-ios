@@ -342,5 +342,6 @@
   "viewUiDialectKindMap": "Map",
   "viewUiDialectKindOther": "This part",
   "viewUiDialectInvalid": "This block shows in DSH Web",
-  "viewUiDialectNote": "Shown in DSH Web"
+  "viewUiDialectNote": "Shown in DSH Web",
+  "viewModelRefreshing": "Getting the latest models"
 }

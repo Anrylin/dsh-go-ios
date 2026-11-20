@@ -1360,8 +1360,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final detailCaps = ref.watch(agentCapabilitiesProvider);
     final connected = conn != null || silentWindow;
     final local = activeHost.kind == HostKind.local;
-    final starting = local && ref.watch(localRuntimeProvider.select((s) => s.status.phase == RuntimePhase.starting));
-    final tidying = starting && ref.watch(localRuntimeProvider.select((s) => s.status.tidyingFiles));
     // The engine stopped on its own: the failure card above the empty state
     // carries the recovery, so the empty state offers no second one.
     final failureCard = local && ref.watch(localRuntimeProvider.select((s) => EngineFailureCard.visibleFor(s.status)));
@@ -1411,11 +1409,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 title: s.title,
                 running: s.running,
                 stopping: s.stopping,
-                streamLost: s.streamLost,
-                syncing: s.syncing,
-                resyncing: s.resyncing,
                 controlReady: s.controlReady,
-                connection: s.connection,
+                // The title pill reports work in progress only. Connectivity
+                // and cache freshness are not chat status (the drawer owns the
+                // one global offline line).
+                syncing: s.syncing,
                 approval: s.openApproval,
                 question: s.questions.firstOrNull,
                 singleQuestion: s.singleQuestion != null,
@@ -1487,18 +1485,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final approval = chat?.approval;
     final question = chat?.question;
     final status = _status(
-      connecting: connAsync.isLoading && conn == null && !silentWindow,
-      starting: starting,
-      connected: connected,
-      idleLabel: switch (localIdle) {
-        RuntimePhase.notInstalled => l10n.phoneEngineNotInstalled,
-        RuntimePhase.installed => l10n.commonStopped,
-        _ => null,
-      },
-      streamLost: !silentWindow && (chat?.streamLost ?? false),
       syncing: chat?.syncing ?? false,
       label: conn?.label ?? switchLabel,
-      connection: chat?.connection,
       running: chat?.running ?? false,
       stopping: chat?.stopping ?? false,
       waiting: approval != null || question != null,
@@ -1601,13 +1589,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       const EngineFailureCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 20)),
                                     ChatEmptyState(
                                       connected: connected,
-                                      connecting: connAsync.isLoading && !silentWindow,
-                                      starting: starting,
-                                      tidying: tidying,
-                                      idle: idle,
+                                      // Keep the manual exit: only a definite
+                                      // failure (hasError) gets the one
+                                      // 「重新连接」 pill. A routine offline
+                                      // state stays quiet — the drawer owns
+                                      // that line.
                                       onReconnect: connAsync.hasError && !connAsync.isLoading && !failureCard
                                           ? _reconnect
                                           : null,
+                                      idle: idle,
                                       onSuggestion: _onSuggestion,
                                       folderPicker: hasFolders
                                           ? QuietChip(
@@ -1763,38 +1753,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               children: [
                                 // Banners are capsules too: the pet stands on
                                 // the topmost one (an empty slot is 0 high).
+                                // The old link's sync / stream-lost banner is
+                                // gone: the header already says 「正在同步对话」.
+                                // This area keeps only a real error (send
+                                // failure) or a notice — never a sync card.
                                 PetPerch(
                                   kind: PerchKind.banner,
                                   child: SmoothSize(
                                     duration: AppMotion.of(context, AppMotion.standard),
                                     curve: AppMotion.std,
                                     alignment: Alignment.bottomCenter,
-                                    // Only the old link's sync / stream-lost
-                                    // banner is hidden during the silent window.
-                                    // Notice / error banners are independent of
-                                    // the connection and must stay visible.
-                                    child: !silentWindow &&
-                                        connected &&
-                                        sessionId != null &&
-                                        !(chat?.controlReady ?? true)
-                                        ? Padding(
-                                            padding: const EdgeInsets.only(bottom: 8),
-                                            child: ErrorBanner(
-                                              info: !(chat?.streamLost ?? false),
-                                              message: chat?.streamLost ?? false
-                                                  ? l10n.stateChatSyncInterrupted
-                                                  : l10n.stateChatSynchronizing,
-                                              action: chat?.resyncing ?? false
-                                                  ? null
-                                                  : (
-                                                      label: l10n.stateChatSyncRetry,
-                                                      onPressed: () {
-                                                        unawaited(ref.read(chatProvider(sessionId).notifier).resync());
-                                                      },
-                                                    ),
-                                            ),
-                                          )
-                                        : error == null && notice == null
+                                    child: error == null && notice == null
                                         ? const SizedBox(width: double.infinity)
                                         : notice != null
                                         ? Padding(
@@ -2049,45 +2018,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     showTrajectorySheet(context, sessionId: sessionId, turn: turn);
   }
 
+  /// WeChat-style header: only work in progress and a not-yet-caught-up
+  /// conversation get a status. Stream, connection and cache-failure wording
+  /// are deliberately absent — the drawer carries the one global offline line,
+  /// and the composer says 「准备中…」 without alarm colours. The bottom banner
+  /// area never repeats a sync hint: it keeps only real errors and notices.
   static HeaderStatus _status({
-    required bool connecting,
-    required bool starting,
-    required bool connected,
-    String? idleLabel,
-    required bool streamLost,
     required bool syncing,
     required String label,
-    required DshConnectionState? connection,
     required bool running,
     required bool stopping,
     required bool waiting,
     String? spoken,
   }) {
-    if (!connected) {
-      if (starting) return HeaderStatus(StatusTone.busy, appL10n.chatStarting);
-      return connecting
-          ? HeaderStatus(StatusTone.busy, appL10n.chatConnecting)
-          : HeaderStatus(StatusTone.idle, idleLabel ?? appL10n.commonNotConnected);
-    }
-    if (streamLost) {
-      return HeaderStatus(StatusTone.error, appL10n.chatDisconnected);
-    }
-    switch (connection) {
-      case DshConnectionState.reconnecting || DshConnectionState.connecting:
-        return HeaderStatus(StatusTone.warn, appL10n.chatReconnecting);
-      case DshConnectionState.unauthorized || DshConnectionState.closed:
-        return HeaderStatus(StatusTone.error, appL10n.chatDisconnected);
-      default:
-        break;
-    }
     if (syncing) return HeaderStatus(StatusTone.busy, appL10n.stateChatSynchronizing);
     if (stopping) return HeaderStatus(StatusTone.busy, appL10n.commonStopping);
-    if (waiting) {
-      return HeaderStatus(StatusTone.warn, appL10n.commonWaitingApproval, spoken: spoken);
-    }
-    if (running) {
-      return HeaderStatus(StatusTone.busy, appL10n.chatGenerating, spoken: spoken);
-    }
+    if (waiting) return HeaderStatus(StatusTone.warn, appL10n.commonWaitingApproval, spoken: spoken);
+    if (running) return HeaderStatus(StatusTone.busy, appL10n.chatGenerating, spoken: spoken);
     return HeaderStatus(StatusTone.ok, label, spoken: spoken);
   }
 }

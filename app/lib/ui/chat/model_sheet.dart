@@ -11,6 +11,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/engine_settings_state.dart';
+import '../../state/model_defaults_state.dart';
 import '../../state/models_state.dart';
 import '../../state/settings_state.dart';
 import '../common/app_sheet.dart';
@@ -44,6 +46,21 @@ String modelShortName(ModelSelection? selection, ModelCatalog? catalog) {
   if (selection == null) return appL10n.viewModelSelect;
   return shortModelName(findModel(catalog, selection)?.name ?? selection.model);
 }
+
+/// The chip's optimistic choice: an explicit pick, then the host's saved
+/// default, then a catalog default (live first, cached second). `null` only
+/// when there is genuinely nothing to choose — never just because the
+/// connection is down.
+ModelSelection? optimisticModelSelection(
+  ModelSelection? selection,
+  EngineSettings? settings,
+  ModelCatalog? liveCatalog,
+  ModelCatalog? cachedCatalog,
+) =>
+    selection ??
+    (settings == null ? null : defaultModelSelection(settings)) ??
+    liveCatalog?.defaultSelection ??
+    cachedCatalog?.defaultSelection;
 
 /// 思考深度的中文名。协议词(off/low/high/max)不直接给人看。
 String effortLabel(String id, [String? fallback]) => switch (id) {
@@ -85,9 +102,18 @@ class ModelChip extends ConsumerWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final catalog = ref.watch(currentModelCatalogProvider);
-    final effective = selection ?? catalog?.defaultSelection;
+    final view = ref.watch(modelListViewProvider);
+    final settings = ref.watch(engineSettingsProvider).value;
+    // Optimistic: see [optimisticModelSelection].
+    final effective = optimisticModelSelection(
+      selection,
+      settings,
+      catalog,
+      view.value,
+    );
+    final displayCatalog = catalog ?? view.value;
     final effort = effective?.reasoningEffort;
-    final label = modelShortName(effective, catalog);
+    final label = modelShortName(effective, displayCatalog);
     final quick = AppMotion.of(context, AppMotion.quick);
     final em = MediaQuery.textScalerOf(context).scale(13);
     final style = theme.textTheme.labelMedium?.copyWith(fontSize: 13);
@@ -441,23 +467,15 @@ class _ModelSheetState extends ConsumerState<_ModelSheet> {
     final Widget body;
     var picking = false;
     if (catalog == null) {
+      // No catalog yet: keep the wording neutral. A failed fetch is retried
+      // by the provider on the next host event, and the title chip already
+      // shows the optimistic default from settings.
       body = catalogAsync.isLoading
           ? const _Loading()
-          : catalogAsync.hasError
-          ? EmptyView(
-              padding: _emptyPadding,
-              icon: AppIcons.offline,
-              title: l10n.viewModelLoadFailed,
-              action: FilledButton.tonal(
-                onPressed: () => ref.invalidate(modelCatalogProvider),
-                child: Text(l10n.commonRetry),
-              ),
-            )
           : EmptyView(
               padding: _emptyPadding,
-              icon: AppIcons.disconnected,
-              title: l10n.viewModelDisconnected,
-              message: l10n.viewModelConnectHint,
+              icon: AppIcons.model,
+              title: l10n.viewModelRefreshing,
             );
     } else {
       final groups = [

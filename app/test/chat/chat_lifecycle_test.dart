@@ -194,7 +194,10 @@ void main() {
     client.watches.single.addError(StateError('gone'));
     await client.watches.single.close();
     await tester.pump();
-    expect(sub.read().error, '对话同步中断');
+    // Sync failures stay silent: no error card, the cached transcript is
+    // readable, and the quiet strip says only 「正在同步消息」 while the retry
+    // runs. The streamLost flag still keeps the composer honest.
+    expect(sub.read().error, isNull);
     expect(sub.read().streamLost, isTrue);
     expect(sub.read().items.whereType<UserChatItem>().single.text, '旧内容');
     expect(sub.read().pending, hasLength(1));
@@ -210,6 +213,26 @@ void main() {
     client.mux.connection.add(DshConnectionState.connected);
     await tester.pump();
     expect(client.watches, hasLength(2));
+    sub.close();
+    container.dispose();
+  });
+
+  testWidgets('watch errors stay silent and retry on a backoff timer', (tester) async {
+    final client = _Client();
+    final container = _container(client);
+    final sub = container.listen(chatProvider('a'), (_, _) {});
+    client.watches.single.addError(StateError('gone'));
+    await client.watches.single.close();
+    await tester.pump();
+    expect(sub.read().error, isNull);
+    expect(sub.read().streamLost, isTrue);
+    expect(client.watches, hasLength(1));
+    // Both onError and onDone arm one bounded 400ms retry; the follow is
+    // reopened silently (no error card, syncing on).
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(client.watches, hasLength(2));
+    expect(sub.read().error, isNull);
+    expect(sub.read().syncing, isTrue);
     sub.close();
     container.dispose();
   });

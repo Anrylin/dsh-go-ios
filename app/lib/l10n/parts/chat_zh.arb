@@ -739,5 +739,6 @@
       }
     }
   },
-  "chatJumpToQuestion": "上一条提问"
+  "chatJumpToQuestion": "上一条提问",
+  "chatPreparingEllipsis": "准备中…"
 }

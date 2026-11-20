@@ -311,5 +311,6 @@
   "chatTodoItemSemantics": "{content}, {state}",
   "chatMentionSemantics": "{kind}: {label}",
   "chatArtifactSemantics": "{name}, {description}",
-  "chatJumpToQuestion": "Previous question"
+  "chatJumpToQuestion": "Previous question",
+  "chatPreparingEllipsis": "One moment…"
 }

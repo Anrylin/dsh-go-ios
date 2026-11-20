@@ -64,7 +64,7 @@ String greetingFor(DateTime now) {
 /// 新对话的空状态:居中偏上,一尾很淡的鲸尾 + 按时段的问候 + 一句短副标题,
 /// 下面是两档控件(empty_actions.dart):
 ///
-/// - 主操作至多一个,只在这一屏自己有出路时出现(连不上引擎:「重新连接」);
+/// - 主操作至多一个,只在这一屏自己有出路时出现(本机没装/没启动:安装或启动);
 /// - 其余都是同一规格的安静胶囊:工作区胶囊、2×2 的建议。
 ///
 /// 输入条才是这一屏的主角,这里只是安静地递几个起点。
@@ -73,22 +73,20 @@ String greetingFor(DateTime now) {
 ///                 ⌒)
 ///               下午好
 ///           今天想做点什么？
-///         ( ▢ 在「dsh-app」中 ⌄ )        ← 断线时这里换成主色「重新连接」
+///         ( ▢ 在「dsh-app」中 ⌄ )
 ///
 ///   ( ▢ 看看工作区有什么 ) ( </> 写个词频统计脚本 )
 ///   ( >_ 新建 Node.js 项目 ) ( ◌ rebase 还是 merge )
 /// ```
 ///
 /// 左右与顶栏、输入条一样离屏幕 12,宽屏时与输入条同宽居中;第一次出现时
-/// 由上到下依次淡入。连不上引擎时建议收起,只留「重新连接」。
+/// 由上到下依次淡入。连接状态不在这里写文案:总会话列表里只有一条全局
+/// 「无法连接到网络」,这里只处理本机需要真修复的情况(没装/没启动)。
 class ChatEmptyState extends StatelessWidget {
   const ChatEmptyState({
     super.key,
     required this.connected,
     required this.onSuggestion,
-    this.connecting = false,
-    this.starting = false,
-    this.tidying = false,
     this.onReconnect,
     this.idle,
     this.now,
@@ -99,16 +97,10 @@ class ChatEmptyState extends StatelessWidget {
   });
 
   final bool connected;
-  final bool connecting;
 
-  /// The on-device engine is booting.
-  final bool starting;
-
-  /// Booting includes the one-time tidy of plugin files (RuntimeStatus.tidyingFiles).
-  final bool tidying;
-
-  /// The engine could not be reached: the one primary pill, 「重新连接」,
-  /// where the workspace chip goes; the suggestions fold away.
+  /// The engine could not be reached (a definite failure, not a routine
+  /// disconnect): the one primary pill, 「重新连接」, where the workspace chip
+  /// goes; the suggestions fold away.
   final VoidCallback? onReconnect;
 
   /// 本机 is down and won't come up by itself (not installed, or stopped
@@ -148,17 +140,9 @@ class ChatEmptyState extends StatelessWidget {
     final dsh = DshColors.of(context);
     final retry = connected ? null : onReconnect;
     final idle = connected || retry != null ? null : this.idle;
-    final subtitle = connected
-        ? l10n.viewEmptySubtitle
-        : retry != null
+    final subtitle = retry != null
         ? l10n.commonEngineUnreachable
-        : idle != null
-        ? idle.message
-        : starting
-        ? (tidying ? l10n.phoneEngineTidyingFilesEllipsis : l10n.viewEmptyStarting)
-        : connecting
-        ? l10n.viewEmptyConnecting
-        : l10n.viewEmptyDisconnected;
+        : idle?.message ?? l10n.viewEmptySubtitle;
 
     var order = 0;
     Widget enter(Widget child) => FadeSlideIn(index: order++, child: child);
