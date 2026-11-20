@@ -518,7 +518,28 @@ class ChatController extends Notifier<ChatState> {
   /// Restart entries retried by hand must keep their persisted request id.
   final _restartIds = <String>{};
   Object? _replayOwner;
-  bool _replayHandedOff = false;
+
+  /// A prompt that actually reached a Host is keyed by its request id. A
+  /// definite refusal (e.g. another Codex client owns the thread) removes only
+  /// its own token, so startup replay is not suppressed for a send that never
+  /// left the device.
+  final _handoffTokens = <String, Object>{};
+  bool get _replayHandedOff => _handoffTokens.isNotEmpty;
+
+  /// A Codex send the Host refused as "another client owns this thread": the
+  /// refusal happens before upstream, so nothing was written and the same
+  /// request can go again once the other turn finishes. The durable outbox
+  /// entry and the waiting bubble stay until it is accepted or retired.
+  final Map<String, _BusyRetry> _busyRetries = {};
+
+  /// Bounded backoff; a manual retry is offered when these run out.
+  static const busyRetryBackoff = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+  ];
 
   /// Device minus Host clock; null until a live event was seen (and always
   /// null on the on-device engine, which shares the clock).
@@ -590,8 +611,9 @@ class ChatController extends Notifier<ChatState> {
         _offlineDeliveryAllowed.clear();
         _replayRestarts.clear();
         _restartTokens.clear();
-        _replayHandedOff = false;
         _replayOwner = null;
+        _clearBusy();
+        _handoffTokens.clear();
         ref.read(pendingSendOutboxProvider.future).then((box) => box.clearAccount(previous)).ignore();
       }
     });
@@ -605,7 +627,8 @@ class ChatController extends Notifier<ChatState> {
       }
       _approvalHost = host;
       _approvalAgent = agent;
-      _replayHandedOff = false;
+      _handoffTokens.clear();
+      _clearBusy();
       _replayOwner = null;
       _replayRequestedIds.clear();
       _offlineQueuedIds.clear();
@@ -660,6 +683,7 @@ class ChatController extends Notifier<ChatState> {
       _stopTimeout?.cancel();
       _awayTimer?.cancel();
       _watchRetryTimer?.cancel();
+      _clearBusy();
       unawaited(_sub?.cancel());
       unawaited(_states?.cancel());
     });
@@ -750,7 +774,10 @@ class ChatController extends Notifier<ChatState> {
     _resyncOwner = null;
     // The outbox keeps its per-Agent keys; only this run's replay marks change.
     _replayOwner = null;
-    _replayHandedOff = false;
+    _handoffTokens.clear();
+    // A waiting Codex send belongs to the retired Agent: cancel its timer so
+    // the target conversation cannot inherit the bubble or the replay.
+    _clearBusy();
     _replayRequestedIds.clear();
     _offlineQueuedIds.clear();
     _offlineDeliveryAllowed.clear();
@@ -913,6 +940,111 @@ class ChatController extends Notifier<ChatState> {
           ]),
         )
         .ignore();
+  }
+
+  /// A prompt that was handed to a Host is no longer a startup replay. A
+  /// definite refusal reverses only this request's handoff; another accepted
+  /// send still suppresses the replay.
+  void _withdrawHandoff(String requestId) => _handoffTokens.remove(requestId);
+
+  /// Retire one waiting Codex send (accepted, echoed, withdrawn or retried by
+  /// hand). Its durable entry is settled by the path that accepted it.
+  void _forgetBusy(String requestId) {
+    final retry = _busyRetries.remove(requestId);
+    retry?.timer?.cancel();
+  }
+
+  void _clearBusy() {
+    for (final retry in _busyRetries.values) {
+      retry.timer?.cancel();
+    }
+    _busyRetries.clear();
+  }
+
+  /// The Host refused before starting a turn: keep the bubble and its durable
+  /// entry, then try the same request again on a bounded backoff. [mode] is
+  /// what the caller asked for, not the steer forced by a running turn, so a
+  /// retry after that turn ends starts a fresh turn. [key] and [deliveryAllowed]
+  /// are captured at the original send so a queued draft cannot be delivered
+  /// into a different Agent or through a route that has since changed.
+  /// Returns whether another automatic attempt is scheduled; `false` means the
+  /// manual-retry notice is already set.
+  bool _scheduleBusyRetry(
+    DshClient client,
+    String requestId,
+    SendMode mode,
+    PendingSendKey key,
+    bool Function()? deliveryAllowed,
+  ) {
+    final retry = _busyRetries.putIfAbsent(
+      requestId,
+      () => _BusyRetry(client, mode, key, deliveryAllowed),
+    );
+    final attempt = retry.attempts;
+    if (attempt >= busyRetryBackoff.length) {
+      _forgetBusy(requestId);
+      // Still durable, and an unchanged manual retry must keep its request id.
+      _restartIds.add(requestId);
+      _pending = List.unmodifiable([
+        for (final prompt in _pending)
+          prompt.requestId == requestId ? prompt.failedAt(_transcript.cursor) : prompt,
+      ]);
+      state = state.copyWith(pending: _placePending(), notice: appL10n.stateChatCodexWaitingManual);
+      return false;
+    }
+    retry.attempts = attempt + 1;
+    retry.timer?.cancel();
+    retry.timer = Timer(busyRetryBackoff[attempt], () => _retryBusy(requestId));
+    return true;
+  }
+
+  /// A turn end on this thread is the earliest reliable sign that the other
+  /// client's writer lease is free; offer the waiting prompts again at once.
+  void _busyOnIdle() {
+    if (_busyRetries.isEmpty || _transcript.running) return;
+    for (final id in [..._busyRetries.keys]) {
+      final retry = _busyRetries[id];
+      // An in-flight retry has not answered yet; re-arming it would start a
+      // second prompt and consume the backoff budget twice.
+      if (retry == null || retry.inFlight) continue;
+      retry.timer?.cancel();
+      // The turn end still paints until the next publish; `send` reads that
+      // flag to choose between a new turn and a steer.
+      retry.timer = Timer(const Duration(milliseconds: 64), () => _retryBusy(id));
+    }
+  }
+
+  void _retryBusy(String requestId) {
+    final retry = _busyRetries[requestId];
+    if (retry == null || retry.inFlight || !ref.mounted) return;
+    final client = _client;
+    if (client == null || !identical(client, retry.client) || !_canControl) return;
+    final prompt = _pending.where((p) => p.requestId == requestId).firstOrNull;
+    if (prompt == null || prompt.failed) {
+      _forgetBusy(requestId);
+      return;
+    }
+    final key = _outboxKeys[requestId];
+    if (key == null || key != retry.key) {
+      // The durable entry moved with an Agent/account switch: never replay it
+      // into the conversation now on screen.
+      _forgetBusy(requestId);
+      return;
+    }
+    retry.inFlight = true;
+    // `send` replaces the waiting bubble with the same request id; no new
+    // durable entry is written (the refused one is still on disk).
+    unawaited(
+      send(
+        prompt.text,
+        attachments: prompt.attachments,
+        mode: retry.mode,
+        verbatim: true,
+        deliveryAllowed: retry.deliveryAllowed,
+        replayKey: key,
+        replayRequestId: requestId,
+      ).whenComplete(() => retry.inFlight = false),
+    );
   }
 
   /// Writes the draft before any RPC goes out. A replay already has a durable
@@ -1152,6 +1284,7 @@ class ChatController extends Notifier<ChatState> {
             // The stopped turn is over, even when what waited in the inbox
             // starts the next one at once (running never reads false).
             if (event is TurnEndedEvent && state.stopping) _endStopping();
+            if (event is TurnEndedEvent) _busyOnIdle();
             _trackApprovals(event);
             if (event is SessionSnapshotEvent) {
               // A replacement transcript may have the same sequence bounds.
@@ -1162,6 +1295,7 @@ class ChatController extends Notifier<ChatState> {
               _publish(freshSnapshot: true);
               if (!_syncReady.isCompleted) _syncReady.complete(true);
               _activateInteraction();
+              if (!_transcript.running) _busyOnIdle();
             } else if (changed) {
               _schedule();
             }
@@ -1823,7 +1957,7 @@ class ChatController extends Notifier<ChatState> {
     final running = state.running;
     final effective = running ? (mode == SendMode.now ? SendMode.steer : mode) : SendMode.now;
     _pending = List.unmodifiable([
-      ..._pending,
+      ..._pending.where((p) => p.requestId != requestId),
       PendingPrompt(
         requestId: requestId,
         text: body,
@@ -1908,6 +2042,8 @@ class ChatController extends Notifier<ChatState> {
   ///
   /// [replayRequestId] is the restart path only: the durable entry already
   /// carries the id DSH deduplicates, so no new one may be minted here.
+  /// [replayKey] keeps a waited Codex send under the Agent that wrote it, even
+  /// if the person switched Agent and back while it was waiting.
   Future<bool> send(
     String text, {
     List<DraftAttachment> attachments = const [],
@@ -1916,14 +2052,16 @@ class ChatController extends Notifier<ChatState> {
     Future<bool> Function(String requestId)? beforeDeliver,
     bool Function()? deliveryAllowed,
     String? replayRequestId,
+    PendingSendKey? replayKey,
   }) async {
     final client = _client;
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return false;
     final body = verbatim ? text : trimmed;
     // Capture the Agent key here, before any await: a queued send must stay
-    // with the Agent the person was looking at when they hit send.
-    final outboxKey = _pendingKey();
+    // with the Agent the person was looking at when they hit send. A waited
+    // retry carries the key of the send that the Host refused.
+    final outboxKey = replayKey ?? _pendingKey();
     if (client == null) {
       return _sendOffline(
         body,
@@ -1947,7 +2085,9 @@ class ChatController extends Notifier<ChatState> {
     final running = state.running;
     final effective = running ? (mode == SendMode.now ? SendMode.steer : mode) : SendMode.now;
     _pending = List.unmodifiable([
-      ..._pending,
+      // A waited Codex retry carries its original request id; replace the
+      // waiting bubble instead of adding a second one with the same key.
+      ..._pending.where((p) => p.requestId != requestId),
       PendingPrompt(
         requestId: requestId,
         text: body,
@@ -1972,6 +2112,7 @@ class ChatController extends Notifier<ChatState> {
         if (!go) {
           // The caller let it go (伙伴小屋 left this conversation meanwhile):
           // nothing went out, so nothing waits and nothing failed.
+          _forgetBusy(requestId);
           _forgetOutbox([requestId]);
           _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
           state = state.copyWith(pending: _placePending());
@@ -2018,6 +2159,7 @@ class ChatController extends Notifier<ChatState> {
       );
       _sent();
       if (!_currentOperation(operation)) return false;
+      _forgetBusy(requestId);
       state = state.copyWith(error: stopFailed, notice: notice ?? enqueueNotice);
       return true;
     } catch (e) {
@@ -2029,15 +2171,38 @@ class ChatController extends Notifier<ChatState> {
           _claimedAt.containsKey(requestId) ||
           _withdrawn.contains(requestId) ||
           _inboxIds().contains(requestId)) {
+        _forgetBusy(requestId);
         _sent();
         return true;
       }
+      // A Codex turn owned by another client is refused by the Host before
+      // anything reaches upstream. Unlike a transport loss this outcome is
+      // definite, so keeping the durable entry and retrying the same request
+      // is safe; the draft must not bounce back to the composer either.
+      if (codexThreadBusy(e is _UploadFailed ? e.cause : e)) {
+        _withdrawHandoff(requestId);
+        final retrying = _scheduleBusyRetry(
+          client,
+          requestId,
+          mode,
+          _outboxKeys[requestId] ?? outboxKey,
+          deliveryAllowed,
+        );
+        state = state.copyWith(
+          pending: _placePending(),
+          // Exhaustion already replaced the notice with the manual-retry hint.
+          notice: retrying ? (enqueueNotice ?? appL10n.stateChatCodexWaiting) : null,
+        );
+        return true;
+      }
+      _forgetBusy(requestId);
       if (_outcomeUnknown(e)) {
         _unsettled = (content: content, requestId: requestId);
       } else {
         // A definite refusal (model/route changed, upload rejected, connection
         // retired) means the durable entry can never be delivered by a later
         // replay: drop it, or it would send itself on the next sync.
+        _withdrawHandoff(requestId);
         _forgetOutbox([requestId]);
       }
       _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
@@ -2051,6 +2216,8 @@ class ChatController extends Notifier<ChatState> {
   Future<bool> retryFailed(PendingPrompt prompt, String text) async {
     if (!_retryingFailed.add(prompt.requestId)) return false;
     try {
+      // A manual retry takes over from any backoff still pending for it.
+      _forgetBusy(prompt.requestId);
       final client = _client;
       if (client == null) return false;
       final operation = _ChatOperation(ref, client, _syncScope);
@@ -2073,8 +2240,14 @@ class ChatController extends Notifier<ChatState> {
       // DSH dedups by requestId, so reusing it for an edit would drop the edit.
       // An edited draft is a new submission, and its old durable copy must go.
       final replayId = _restartIds.contains(current.requestId) && edited == current.text ? current.requestId : null;
+      final replayKey = replayId == null ? null : _outboxKeys[current.requestId];
       if (replayId == null) _forgetOutbox([current.requestId]);
-      final ok = await send(edited, attachments: current.attachments, replayRequestId: replayId);
+      final ok = await send(
+        edited,
+        attachments: current.attachments,
+        replayRequestId: replayId,
+        replayKey: replayKey,
+      );
       if (!_currentOperation(operation)) return false;
       if (ok) {
         _pending = List.unmodifiable(_pending.where((p) => p.requestId != current.requestId));
@@ -2163,9 +2336,11 @@ class ChatController extends Notifier<ChatState> {
         // No clientTimeZone: DSH needs an IANA name, which Dart can't provide; the
         // local process already runs with TZ set from the device (RuntimeController).
       );
-      // The durable entry is being removed; a stream drop in this same
-      // controller must not replay a prompt we already handed to this Host.
-      _replayHandedOff = true;
+      // The durable entry is being handed to this Host; a stream drop in this
+      // same controller must not replay it. Keyed by request so a definite
+      // refusal can withdraw only this prompt's handoff, not other accepted
+      // sends'.
+      _handoffTokens[requestId] = Object();
       return handoff;
     }
 
@@ -2233,8 +2408,15 @@ class ChatController extends Notifier<ChatState> {
     try {
       await operation.client.cancel(sessionId);
       return _currentOperation(operation);
-    } catch (_) {
-      if (_currentOperation(operation)) _endStopping(failure);
+    } catch (e) {
+      if (_currentOperation(operation)) {
+        // A cancel refused because another client owns the turn is not the
+        // same as a local stop failure: say which end started it, even when
+        // the caller supplied the generic "stop failed" banner.
+        _endStopping(
+          codexThreadBusy(e) ? appL10n.stateChatCodexNotOwner : failure,
+        );
+      }
       return false;
     }
   }
@@ -2775,6 +2957,24 @@ class CommandLog {
         if (c.seq == null) c,
     ]);
   }
+}
+
+/// One Codex send waiting for the other client's writer lease to clear.
+/// The key and route check come from the original call so a retry cannot be
+/// delivered to another Agent or through a source that has since changed.
+class _BusyRetry {
+  _BusyRetry(this.client, this.mode, this.key, this.deliveryAllowed);
+
+  final DshClient client;
+  final SendMode mode;
+  final PendingSendKey key;
+  final bool Function()? deliveryAllowed;
+  int attempts = 0;
+  Timer? timer;
+
+  /// A retry that has been handed to `send` is not re-armed by a turn end
+  /// while that call is still awaiting its answer.
+  bool inFlight = false;
 }
 
 /// Ownership of one asynchronous send/stop/fork transaction. A superseded stop

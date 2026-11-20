@@ -16259,6 +16259,20 @@ class L10nEn extends L10n {
   String get stateChatWriterHeld => 'This chat is in use elsewhere';
 
   @override
+  String get stateChatCodexThreadBusy =>
+      'The other end is working in this Codex chat. It will retry when that finishes.';
+
+  @override
+  String get stateChatCodexNotOwner => 'The other end started this Codex turn. It can’t be stopped or steered here.';
+
+  @override
+  String get stateChatCodexWaiting => 'The other end is working in this Codex chat. Retrying shortly.';
+
+  @override
+  String get stateChatCodexWaitingManual =>
+      'The other end is still working in this Codex chat. Your message is kept; retry it later.';
+
+  @override
   String get stateChatModelUnavailable => 'This model is unavailable';
 
   @override
