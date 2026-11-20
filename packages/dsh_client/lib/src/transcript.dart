@@ -314,6 +314,23 @@ class ChatTranscript {
     ];
   }
 
+  /// Whether a reply is still arriving that has no durable row yet. Only this
+  /// state is worth a sidecar: once the message commits, the log holds it.
+  /// A draft restored from disk lives in [_seeded] (it paints before any
+  /// snapshot), so its unfinished rows count here too: otherwise a cache flush
+  /// would see no live draft and drop the sidecar on the next equal signature.
+  bool get hasLiveDraft => _drafts.isNotEmpty || (_seeded?.any(_isSeededDraftRow) ?? false);
+
+  static bool _isSeededDraftRow(ChatItem item) => switch (item) {
+    AssistantChatItem(:final streaming, :final seq) => seq == null && streaming,
+    ToolChatItem(:final status, :final seq) =>
+      seq == null &&
+      (status == ToolStatus.streaming ||
+          status == ToolStatus.running ||
+          status == ToolStatus.awaitingApproval),
+    _ => false,
+  };
+
   /// Shows a cached window until the first snapshot arrives: a chat list can
   /// paint a conversation on a cold start before the Host answers.
   ///
