@@ -97,13 +97,21 @@ class AgentSwitchReconnectController extends Notifier<bool> {
       _later(() {
         // A connect can finish before the microtask runs. There is nothing to
         // hide then; this must not leave the flag on for the full timeout.
-        if (identical(_agent, agent) && ref.read(activeConnectionProvider).value?.agent != agent) _begin();
+        final connection = ref.read(activeConnectionProvider);
+        if (identical(_agent, agent) && !connection.hasError && connection.value?.agent != agent) _begin();
       });
     }
 
     // The replacement link proves the switch settled. A stale value from the
     // retired build still names the old Agent and cannot clear the flag.
     ref.listen(activeConnectionProvider, (_, next) {
+      // An error is never part of a transient switch: end the silent window so
+      // a retry that goes back to loading is shown as a real reconnect instead
+      // of being masked as "已连接".
+      if (next.hasError) {
+        _finish();
+        return;
+      }
       if (_active && next.value?.agent == _agent) _finish();
     });
     ref.onDispose(() => _timer?.cancel());

@@ -16,6 +16,7 @@ import '../../runtime/local_footprint.dart' show RuntimeMissing;
 import '../../runtime/runtime_bridge.dart' show RuntimePhase;
 import '../../runtime/runtime_state.dart' show localRuntimeProvider;
 import '../../state/agent_capabilities_state.dart';
+import '../../state/agent_selection_state.dart' show activeAgentProvider;
 import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/attachments.dart';
 import '../../state/balance_state.dart';
@@ -30,7 +31,7 @@ import '../../state/draft_store.dart';
 import '../../state/drawer_view_state.dart';
 import '../../state/engine_control.dart';
 import '../../state/engine_settings_state.dart' show engineSettingsProvider;
-import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
+import '../../state/hosts_state.dart' show HostKind, activeHostProvider, hostLabel;
 import '../../state/media_generation.dart';
 import '../../state/mention_state.dart';
 import '../../state/models_state.dart';
@@ -444,11 +445,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     // parameter header (media-generation §8, revision of 2026-10-28).
     final generate = ref.read(generateModeProvider).byKey[_draftKey];
     if (generate != null && !_generateReady(generate, typed, drafts)) return;
-    final client = ref.read(activeConnectionProvider).value?.client;
-    if (client == null) return;
-    final generation = client.mux.generation;
     final scope = _draftScope;
-    bool ownsDraft() => identical(_draftScope, scope) && _sameConnection(client, generation);
+    // Draft ownership is by this composer's scope, not by a DshClient: during
+    // an Agent switch the old client is retired before the new one is ready,
+    // and `_draftScope` is already reset on any client change (see the
+    // activeConnectionProvider listener in initState). The notifier queues a
+    // send with no live client for the Agent, so never drop it here.
+    bool ownsDraft() => mounted && identical(_draftScope, scope);
     // 引用追问: the passage above the composer goes in front, as a quote.
     final quote = ref.read(composerQuoteProvider)[_draftKey];
     final asked = quote == null ? typed : withQuote(quote, typed);
@@ -534,16 +537,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       // A generation request, counted on top of its turn.
       if (ok && generate != null && mounted) ref.read(usageStatsProvider.notifier).count(UsageCount.gen);
     }
-    if (!ok && _sameConnection(client, generation)) _giveBack(sessionId, typed, drafts, quote: quote);
+    // A failed send must be restored only for this still-current composer.
+    // A successful Agent-scoped offline queue must never be mistaken for a
+    // failure just because the old client was retired in the meantime.
+    if (!ok && mounted && identical(_draftScope, scope)) _giveBack(sessionId, typed, drafts, quote: quote);
   }
 
   // A failed send belongs to the Host that accepted it. The controller may
   // retire its continuation after reconnect; do not restore its draft into a
   // replacement Host merely because it uses the same session id.
-  bool _sameConnection(DshClient client, MuxGeneration? generation) =>
+  bool _sameConnection(DshClient? client, MuxGeneration? generation) =>
       mounted &&
       identical(ref.read(activeConnectionProvider).value?.client, client) &&
-      identical(client.mux.generation, generation);
+      identical(client?.mux.generation, generation);
 
   /// 没发出去:把字、附件和引用还给那个对话(用户还没开始打新的才还)。
   void _giveBack(String sessionId, String text, List<DraftAttachment> attachments, {String? quote}) {
@@ -572,8 +578,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   /// it was. Not sent: it waits in that conversation's composer.
   Future<void> _resend(String sessionId, String text, List<DraftAttachment> images) async {
     final client = ref.read(activeConnectionProvider).value?.client;
-    if (client == null) return;
-    final generation = client.mux.generation;
+    final generation = client?.mux.generation;
+    // With no live client the notifier queues this for the Agent; keep going.
     final ok = await ref.read(chatProvider(sessionId).notifier).send(text, attachments: images);
     if (ok || !_sameConnection(client, generation)) return;
     final (:quote, :body) = splitQuote(text);
@@ -663,6 +669,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (!running) return _send();
     // The choice belongs to the draft and connection that opened this menu.
     // A surviving sheet must not send a newly selected conversation or draft.
+    // A retired client during an Agent switch is a valid "no client" identity:
+    // the notifier queues the send, so it must not be dropped here.
     final scope = _draftScope;
     final client = ref.read(activeConnectionProvider).value?.client;
     final generation = client?.mux.generation;
@@ -707,9 +715,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         !identical(_draftScope, scope) ||
         _draftKey != sessionId ||
         ref.read(currentSessionProvider) != sessionId ||
-        client == null ||
         !_sameConnection(client, generation) ||
-        client.mux.lastReadyGenerationNumber != readyNumber ||
+        client?.mux.lastReadyGenerationNumber != readyNumber ||
         _input.text != text ||
         !identical(_drafts, drafts) ||
         ref.read(composerQuoteProvider)[sessionId] != quote) {
@@ -723,8 +730,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final sessionId = ref.read(currentSessionProvider);
     if (sessionId == null) return;
     final client = ref.read(activeConnectionProvider).value?.client;
-    if (client == null) return;
-    final generation = client.mux.generation;
+    final generation = client?.mux.generation;
+    // With no live client the notifier queues this for the Agent; keep going.
     final lost = await ref.read(chatProvider(sessionId).notifier).sendNow(prompt);
     if (_sameConnection(client, generation)) _giveBackLost(sessionId, lost);
   }
@@ -744,14 +751,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final sessionId = ref.read(currentSessionProvider);
     if (sessionId == null) return;
     final client = ref.read(activeConnectionProvider).value?.client;
-    if (client == null) return;
-    final generation = client.mux.generation;
-    final readyNumber = client.mux.lastReadyGenerationNumber;
+    final generation = client?.mux.generation;
+    final readyNumber = client?.mux.lastReadyGenerationNumber;
     final ok = await ref.read(chatProvider(sessionId).notifier).withdrawQueued(prompt);
     if (!ok ||
         !mounted ||
         !_sameConnection(client, generation) ||
-        client.mux.lastReadyGenerationNumber != readyNumber) {
+        client?.mux.lastReadyGenerationNumber != readyNumber) {
       return;
     }
     if (_draftKey != sessionId) {
@@ -789,18 +795,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final scope = _draftScope;
     final generation = client?.mux.generation;
     final readyNumber = client?.mux.lastReadyGenerationNumber;
-    var hostRetired = false;
-    bool ownsDraft() =>
+    final host = ref.read(activeHostProvider);
+    final agent = ref.read(activeAgentProvider);
+    final sessionId = ref.read(currentSessionProvider);
+    var retired = false;
+
+    bool sameTarget() =>
         mounted &&
-        !hostRetired &&
-        identical(_draftScope, scope) &&
-        identical(ref.read(activeConnectionProvider).value?.client, client) &&
-        identical(client?.mux.generation, generation) &&
-        client?.mux.lastReadyGenerationNumber == readyNumber;
+        !retired &&
+        ref.read(activeHostProvider) == host &&
+        ref.read(activeAgentProvider) == agent &&
+        ref.read(currentSessionProvider) == sessionId;
+
+    bool ownsDraft() {
+      if (!sameTarget()) return false;
+      final current = ref.read(activeConnectionProvider).value?.client;
+      if (identical(current, client)) {
+        return identical(_draftScope, scope) &&
+            identical(client?.mux.generation, generation) &&
+            client?.mux.lastReadyGenerationNumber == readyNumber;
+      }
+      // The target connection can arrive while the system picker is open (an
+      // Agent switch publishes null -> target client). Same Host, Agent and
+      // session means this is the connection the pick was waiting for: keep
+      // the picked files instead of silently dropping them.
+      return true;
+    }
+
     // A derived connection can coalesce A -> B -> A before its next read.
-    // Observe the selected Host directly for this picker attempt only.
+    // Observe the route directly for this picker attempt only.
     final hostChanges = ref.listenManual(activeHostProvider, (previous, next) {
-      if (previous != next) hostRetired = true;
+      if (previous != next) retired = true;
+    });
+    final agentChanges = ref.listenManual(activeAgentProvider, (previous, next) {
+      if (previous != next) retired = true;
+    });
+    final sessionChanges = ref.listenManual(currentSessionProvider, (previous, next) {
+      if (previous != next) retired = true;
     });
     try {
       final choice = await showPlusPanel(
@@ -848,6 +879,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _addDrafts(picked.attachments, problem: picked.problem);
     } finally {
       hostChanges.close();
+      agentChanges.close();
+      sessionChanges.close();
     }
   }
 
@@ -885,6 +918,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (ok.isNotEmpty) {
       setState(() => _drafts = [..._drafts, ...ok]);
       _saveDraft();
+      // The ＋ sheet was modal and took focus away; a chip appearing in the
+      // tray is not enough — put the caret back so typing lands immediately.
+      // Guarded by ok.isNotEmpty: a cancelled picker / permission denial / size
+      // overflow only shows a toast and must not raise the keyboard.
+      _focus.requestFocus();
     }
     if (problem != null) _toast(problem);
   }
@@ -1223,8 +1261,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final sessionId = ref.read(currentSessionProvider);
     if (sessionId == null) return;
     final client = ref.read(activeConnectionProvider).value?.client;
-    if (client == null) return;
-    final generation = client.mux.generation;
+    final generation = client?.mux.generation;
     final lost = await ref.read(chatProvider(sessionId).notifier).cancel();
     if (_sameConnection(client, generation)) _giveBackLost(sessionId, lost);
   }
@@ -1303,13 +1340,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final sessionId = ref.watch(currentSessionProvider);
+    // Agent switch rebuilds the link to the same Host in the background. Keep
+    // the last known host identity on screen for that short window: a real
+    // reconnect (network loss, retries) is unaffected, this only covers the
+    // deliberate "Codex → DSH" style switch. A definite failure (hasError)
+    // ends the window at once — it must not be swallowed.
+    final agentSwitching = ref.watch(agentSwitchReconnectProvider);
+    final activeHost = ref.watch(activeHostProvider);
     final connAsync = ref.watch(activeConnectionProvider);
     final conn = connAsync.value;
+    final silentWindow = agentSwitching && !connAsync.hasError;
+    // The header label when the old connection has been retired but the new
+    // one is not ready yet: name the Host we are switching to, not 本机.
+    final switchLabel = silentWindow
+        ? hostLabel(activeHost.kind, ref.watch(hostNameProvider(activeHost)))
+        : l10n.commonThisPhone;
     // 会话详情 is the native Harness's own session report (progress, subagents,
     // jobs); a CodeX or AGY conversation has no such page.
     final detailCaps = ref.watch(agentCapabilitiesProvider);
-    final connected = conn != null;
-    final local = ref.watch(activeHostProvider.select((h) => h.kind == HostKind.local));
+    final connected = conn != null || silentWindow;
+    final local = activeHost.kind == HostKind.local;
     final starting = local && ref.watch(localRuntimeProvider.select((s) => s.status.phase == RuntimePhase.starting));
     final tidying = starting && ref.watch(localRuntimeProvider.select((s) => s.status.tidyingFiles));
     // The engine stopped on its own: the failure card above the empty state
@@ -1421,6 +1471,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       });
     }
 
+    // 输入条在 Agent 切换的静默窗口里照常可用:同一个 Host、同一个会话,只是
+    // 链路在换。发送会进目标 Agent 的离线队列并显示成待发气泡(没有 client 时
+    // ChatController.send 走 _sendOffline),不是失败,也不该让人打完的字无处可去。
+    // 只对已经在这个 Host 上的会话放开:没有会话时连创建都需要 client,仍按未连接
+    // 处理。真正的重连(conn 还在、状态是 reconnecting)和失败(hasError)不受影响。
+    final switchSendable = silentWindow && sessionId != null;
+    final composerConnected = conn != null || switchSendable;
+    final composerReady = switchSendable || (chat?.controlReady ?? true);
     final title = switch (chat?.title ?? listedTitle) {
       final t? when t.trim().isNotEmpty => chatTitleShown(t.trim()),
       _ => l10n.commonNewChat,
@@ -1428,7 +1486,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final approval = chat?.approval;
     final question = chat?.question;
     final status = _status(
-      connecting: connAsync.isLoading && conn == null,
+      connecting: connAsync.isLoading && conn == null && !silentWindow,
       starting: starting,
       connected: connected,
       idleLabel: switch (localIdle) {
@@ -1436,9 +1494,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         RuntimePhase.installed => l10n.commonStopped,
         _ => null,
       },
-      streamLost: chat?.streamLost ?? false,
+      streamLost: !silentWindow && (chat?.streamLost ?? false),
       syncing: chat?.syncing ?? false,
-      label: conn?.label ?? l10n.commonThisPhone,
+      label: conn?.label ?? switchLabel,
       connection: chat?.connection,
       running: chat?.running ?? false,
       stopping: chat?.stopping ?? false,
@@ -1542,7 +1600,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       const EngineFailureCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 20)),
                                     ChatEmptyState(
                                       connected: connected,
-                                      connecting: connAsync.isLoading,
+                                      connecting: connAsync.isLoading && !silentWindow,
                                       starting: starting,
                                       tidying: tidying,
                                       idle: idle,
@@ -1710,7 +1768,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     duration: AppMotion.of(context, AppMotion.standard),
                                     curve: AppMotion.std,
                                     alignment: Alignment.bottomCenter,
-                                    child: connected && sessionId != null && !(chat?.controlReady ?? true)
+                                    // Only the old link's sync / stream-lost
+                                    // banner is hidden during the silent window.
+                                    // Notice / error banners are independent of
+                                    // the connection and must stay visible.
+                                    child: !silentWindow &&
+                                        connected &&
+                                        sessionId != null &&
+                                        !(chat?.controlReady ?? true)
                                         ? Padding(
                                             padding: const EdgeInsets.only(bottom: 8),
                                             child: ErrorBanner(
@@ -1842,10 +1907,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     // The page's context: Scaffold drops the keyboard inset below.
                                     maxLines: Composer.linesFor(context),
                                     focusNode: _focus,
-                                    connected: connected,
+                                    connected: composerConnected,
                                     running: chat?.running ?? false,
                                     stopping: chat?.stopping ?? false,
-                                    sessionReady: chat?.controlReady ?? true,
+                                    sessionReady: composerReady,
                                     busy: _creating != null || _syncWait != null,
                                     // The header, the tool row and the strip
                                     // already say an approval waits: the hint
@@ -1866,13 +1931,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                         ? l10n.mediaHintVideo
                                         : l10n.mediaHintImage,
                                     onSend: _send,
-                                    onSendOptions: chat?.controlReady ?? true ? _sendOptions : null,
+                                    onSendOptions: composerReady ? _sendOptions : null,
                                     voice: _voice,
                                     onKeyEvent: _mentions.handleKey,
-                                    onContentInserted: connected ? _pasteContent : null,
+                                    onContentInserted: composerConnected ? _pasteContent : null,
                                     onStop: _stop,
                                     hasAttachments: _drafts.isNotEmpty,
-                                    leading: AttachButton(onPressed: connected ? _attach : null),
+                                    leading: AttachButton(onPressed: composerConnected ? _attach : null),
                                     tray: ComposerTrayStack.maybe(
                                       quote: switch (quote) {
                                         final quote? => QuoteChip(
