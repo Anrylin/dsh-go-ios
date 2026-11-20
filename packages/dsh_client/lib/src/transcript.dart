@@ -327,6 +327,35 @@ class ChatTranscript {
     if (_title == null && title != null) _title = title;
   }
 
+  /// Drops everything learned from a previous Agent/Host. A chat controller
+  /// reused across an Agent switch must not paint the old transcript, keep its
+  /// approvals/questions, or block the target Agent's cached window with a
+  /// nonempty log.
+  void clear() {
+    _log.clear();
+    _drafts.clear();
+    _approvals.clear();
+    _questions.clear();
+    _inbox = const {'next-turn': [], 'next-step': []};
+    _durable = null;
+    _items = null;
+    _durableFold = null;
+    _durableTail.clear();
+    _derivedRunning = null;
+    _traces = null;
+    _previousTraces = const [];
+    _todos = null;
+    _goal = null;
+    _runningOverride = null;
+    _seeded = null;
+    projections = SessionProjections.empty;
+    header = null;
+    _title = null;
+    cursor = -1;
+    hasMoreHistory = false;
+    connectionState = null;
+  }
+
   /// Applies one event; returns `true` when [items] may have changed.
   bool apply(DshEvent event) {
     switch (event) {
