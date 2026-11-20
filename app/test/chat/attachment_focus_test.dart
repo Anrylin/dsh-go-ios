@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/harness.dart';
 
@@ -71,6 +72,12 @@ class _StatusProbe extends ConsumerWidget {
 
 void main() {
   setUpAll(loadTestFonts);
+
+  setUp(() {
+    // Agent switches persist the choice; the fake provider must be mocked so
+    // `select` does not wait forever on the real plugin channel.
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
 
   Future<void> mountChat(WidgetTester tester, FakePicker picker, {List<Override> extra = const []}) async {
     usePhoneView(tester);
@@ -245,6 +252,7 @@ void main() {
     final harness = ChatHarness(
       session: 's',
       connected: false,
+      connectionOverride: activeConnectionProvider.overrideWith((ref) => ref.watch(_connectionStateProvider)),
       extra: [
         _connectionStateProvider.overrideWith(() => conn),
         activeHostProvider.overrideWith(_FixedActiveHost.new),
@@ -252,10 +260,7 @@ void main() {
     );
     await tester.pumpWidget(
       testApp(
-        ProviderScope(
-          overrides: [activeConnectionProvider.overrideWith((ref) => ref.watch(_connectionStateProvider))],
-          child: const ChatScreen(),
-        ),
+        const ChatScreen(),
         overrides: harness.overrides,
       ),
     );
@@ -276,7 +281,7 @@ void main() {
     // Switch the Agent for the same Host, exactly as a user selecting a
     // different Agent in settings would. This is what triggers
     // agentSwitchReconnectProvider in production.
-    container.read(agentSelectionProvider.notifier).select('relay', RemoteAgent.codex);
+    await container.read(agentSelectionProvider.notifier).select('relay', RemoteAgent.codex);
     await pumpFrames(tester);
     expect(container.read(activeAgentProvider), RemoteAgent.codex);
     expect(container.read(agentSwitchReconnectProvider), isTrue);

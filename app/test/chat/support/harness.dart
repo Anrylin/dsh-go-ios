@@ -455,6 +455,7 @@ class ChatHarness {
     this.session,
     this.states = const {},
     this.connected = true,
+    this.connectionOverride,
     String created = 'new-session',
     this.usage = const {},
     this.balance = healthyBalance,
@@ -470,6 +471,11 @@ class ChatHarness {
   final String? session;
   final Map<String, ChatState> states;
   final bool connected;
+
+  /// When set, replaces the harness's default `activeConnectionProvider`
+  /// override so a test can drive connection changes in the *same* scope as
+  /// the silent-window provider that listens to it.
+  final Override? connectionOverride;
   final FakeSessions sessions;
   final Map<String, SessionUsage> usage;
   final BalanceResult balance;
@@ -495,7 +501,8 @@ class ChatHarness {
   Completer<void>? catalogHold;
 
   List<Override> get overrides => [
-    activeConnectionProvider.overrideWithValue(AsyncData<HostConnection?>(connected ? fakeConnection : null)),
+    connectionOverride ??
+        activeConnectionProvider.overrideWithValue(AsyncData<HostConnection?>(connected ? fakeConnection : null)),
     // Local-engine features (account sign-in) read the on-device engine
     // directly; there is no native runtime in tests.
     localConnectionProvider.overrideWith(NoLocalEngine.new),

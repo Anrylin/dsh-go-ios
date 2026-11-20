@@ -230,14 +230,14 @@ void main() {
   // These tests stay on ordinary refusals, which still fail the send.
   group('a failed send keeps its cause', () {
     test('a refused send is worded, and its code survives for 详情', () async {
-      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'code': 'session/agent-busy'});
       expect(await chat().send('你好'), isFalse);
       expect(state().error, '发送失败：AI 正忙，稍后再试');
       expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
     });
 
     test('a stream event republish keeps the details visible', () async {
-      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'code': 'session/agent-busy'});
       expect(await chat().send('你好'), isFalse);
       expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
       // Any watch event schedules the 32ms _publish(), which rebuilds ChatState
@@ -264,7 +264,7 @@ void main() {
     });
 
     test('a later error without a cause never shows the previous one’s', () async {
-      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'code': 'session/agent-busy'});
       await chat().send('你好');
       expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
       // A different failure, this time carrying no details of its own.
