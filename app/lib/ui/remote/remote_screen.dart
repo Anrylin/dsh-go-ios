@@ -641,7 +641,10 @@ class _RelayRow extends ConsumerWidget {
     final status = active ? ref.watch(hostLinkStatusProvider(hostRef)).value : null;
     final view = status == null
         ? HostStatusView.ofRelayHost(host)
-        : HostStatusView.ofLink(status, silentConnect: ref.watch(agentSwitchReconnectProvider));
+        : HostStatusView.ofLink(
+            status,
+            silentConnect: active && ref.watch(agentSwitchReconnectProvider),
+          );
     return Semantics(
       key: ValueKey('remote-row-${host.id}'),
       selected: active,

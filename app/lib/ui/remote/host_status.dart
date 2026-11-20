@@ -45,7 +45,10 @@ HostStatusView watchHostStatus(WidgetRef ref, HostRef host) {
     return HostStatusView(view.tone, view.label);
   }
   final status = ref.watch(hostLinkStatusProvider(host)).value ?? HostLinkStatus.idle;
-  final silentConnect = ref.watch(agentSwitchReconnectProvider);
+  // Only the active Host's Agent swap is silent. Another Host genuinely
+  // connecting must still show its busy state.
+  final silentConnect = ref.watch(agentSwitchReconnectProvider) &&
+      ref.watch(activeHostProvider.select((active) => active == host));
   // 有一条活着的连接就是「已连接」。
   //
   // 连线对象是 autoDispose 的:抽屉、设置、网页版各自 watch 一次,重建时可能
