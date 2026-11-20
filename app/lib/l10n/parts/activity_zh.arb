@@ -248,6 +248,20 @@
   "activityDiffUnknownLines": "行号未知",
   "activityDiffCopyPath": "复制路径",
   "activityThinking": "思考",
+  "activityCompactRunning": "优化对话",
+  "activityCompactDone": "已优化对话",
+  "activityConnectorTool": "连接器 · {tool}",
+  "@activityConnectorTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "activityConnector": "连接器",
+  "activityEditFile": "修改文件",
+  "activityReviewMode": "审阅模式",
+  "activityCommand": "运行",
   "activityReplyInterrupted": "回复（已中断）",
   "activityWaitingApproval": "等待确认",
   "activityWaitingAnswer": "等待回答",

@@ -140,6 +140,19 @@ class ToolView {
       };
     }
     if (name.isEmpty) return appL10n.activityToolCall;
+    if (name == 'codex.compaction') {
+      return switch (item.status) {
+        ToolStatus.succeeded => appL10n.activityCompactDone,
+        ToolStatus.running || ToolStatus.streaming => appL10n.activityCompactRunning,
+        // Failed / denied / cancelled are not "optimizing": stay neutral.
+        _ => appL10n.activityToolCall,
+      };
+    }
+    if (name == 'codex.command') return appL10n.activityCommand;
+    if (name == 'codex.mcpToolCall') {
+      final tool = arg('name')?.trim();
+      if (tool != null && tool.isNotEmpty) return appL10n.activityConnectorTool(tool);
+    }
     return ToolGlyphs.labelFor(name);
   }
 

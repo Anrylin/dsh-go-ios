@@ -30,6 +30,10 @@ import '../common/brief_notice.dart';
 /// 显示的输出上限;复制拿到的永远是全文。
 const _maxShownChars = 60000;
 
+/// 详情页里工具行的动词,和消息流里的 [ToolView.verb] 完全一致。
+/// 抽成函数是为了让「compaction 成功时态」这类回归有直接可测的点。
+String toolStepVerb(ToolChatItem item) => ToolView.of(item).verb;
+
 /// 一步的全貌。模型请求按步号找,工具调用(和它的审批)按 callId 找。
 class StepDetailPage extends ConsumerWidget {
   const StepDetailPage({
@@ -141,7 +145,7 @@ class _ToolStep extends StatelessWidget {
     };
     final outcome = wait?.outcome;
     final facts = <(String, Widget)>[
-      (l10n.activityTools, _mono(context, tool.name)),
+      (l10n.activityTools, _plain(context, toolStepVerb(tool))),
       (l10n.commonStatus, Text(status.$1, style: _value(context, status.$2))),
       if (span.dispatched ?? span.start case final at) (l10n.activityStepDispatched, _plain(context, clockTime(at))),
       if (wait case final w?)
