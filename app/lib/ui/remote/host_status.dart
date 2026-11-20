@@ -16,12 +16,18 @@ class HostStatusView {
   final StatusTone tone;
   final String label;
 
-  static HostStatusView ofLink(HostLinkStatus status) => switch (status.phase) {
+  /// [silentConnect] is the short window while the active Host's Agent is
+  /// swapped: its link is rebuilt in the background, so a `connecting` phase
+  /// here must not surface as 「正在连接」. Reconnecting and failed phases are
+  /// never hidden — they are real network failures.
+  static HostStatusView ofLink(HostLinkStatus status, {bool silentConnect = false}) => switch (status.phase) {
     HostLinkPhase.idle => HostStatusView(StatusTone.idle, appL10n.commonNotConnected),
-    HostLinkPhase.connecting => HostStatusView(
-      StatusTone.busy,
-      status.step == null ? appL10n.remoteConnecting : '${status.step!.label}…',
-    ),
+    HostLinkPhase.connecting => silentConnect
+        ? HostStatusView(StatusTone.ok, appL10n.remoteConnected)
+        : HostStatusView(
+            StatusTone.busy,
+            status.step == null ? appL10n.remoteConnecting : '${status.step!.label}…',
+          ),
     HostLinkPhase.connected => HostStatusView(StatusTone.ok, appL10n.remoteConnected),
     HostLinkPhase.reconnecting => HostStatusView(StatusTone.warn, appL10n.remoteReconnecting),
     HostLinkPhase.failed => HostStatusView(StatusTone.error, appL10n.commonConnectionFailed),
@@ -39,6 +45,7 @@ HostStatusView watchHostStatus(WidgetRef ref, HostRef host) {
     return HostStatusView(view.tone, view.label);
   }
   final status = ref.watch(hostLinkStatusProvider(host)).value ?? HostLinkStatus.idle;
+  final silentConnect = ref.watch(agentSwitchReconnectProvider);
   // 有一条活着的连接就是「已连接」。
   //
   // 连线对象是 autoDispose 的:抽屉、设置、网页版各自 watch 一次,重建时可能
@@ -51,7 +58,7 @@ HostStatusView watchHostStatus(WidgetRef ref, HostRef host) {
       return HostStatusView(StatusTone.ok, appL10n.remoteConnected);
     }
   }
-  return HostStatusView.ofLink(status);
+  return HostStatusView.ofLink(status, silentConnect: silentConnect);
 }
 
 IconData hostKindIcon(HostKind kind) => switch (kind) {

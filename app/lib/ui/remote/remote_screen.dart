@@ -159,7 +159,8 @@ class _ActiveCard extends ConsumerWidget {
     final l10n = context.l10n;
     if (active.isLocal) return const SizedBox.shrink();
     final status = ref.watch(hostLinkStatusProvider(active)).value ?? HostLinkStatus.idle;
-    final view = HostStatusView.ofLink(status);
+    final agentSwitching = ref.watch(agentSwitchReconnectProvider);
+    final view = HostStatusView.ofLink(status, silentConnect: agentSwitching);
     final name = ref.watch(hostNameProvider(active)) ?? l10n.commonRemoteHost;
     final ssh = active.kind == HostKind.ssh ? ref.watch(hostsProvider).sshById(active.id) : null;
     final error = status.error;
@@ -186,7 +187,11 @@ class _ActiveCard extends ConsumerWidget {
             AnimatedStatusDot(tone: view.tone, size: 7),
             const SizedBox(width: 6),
             Flexible(
-              child: Text(_statusLine(status, view, ssh?.address), maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                _statusLine(status, view, ssh?.address, silentConnect: agentSwitching),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             if (active.kind == HostKind.relay && status.isConnected) ...[
               const SizedBox(width: 6),
@@ -237,12 +242,16 @@ class _ActiveCard extends ConsumerWidget {
     );
   }
 
-  static String _statusLine(HostLinkStatus status, HostStatusView view, String? address) {
+  static String _statusLine(HostLinkStatus status, HostStatusView view, String? address, {bool silentConnect = false}) {
     if (status.phase == HostLinkPhase.reconnecting) {
       final why = status.error?.message;
       return why == null ? appL10n.remoteReconnectingEllipsis : appL10n.remoteReconnectReason(why);
     }
-    if (status.phase == HostLinkPhase.connected) {
+    // An Agent switch relinks in the background. Report the host as still
+    // connected instead of flashing 「正在连接」; reconnecting/failed above
+    // and below this branch stay untouched.
+    if (status.phase == HostLinkPhase.connected ||
+        (silentConnect && status.phase == HostLinkPhase.connecting)) {
       if (address != null) return appL10n.remoteConnectedSsh(address);
       final path = status.network?.path ?? status.path;
       return path == null ? appL10n.remoteConnectedEncrypted : appL10n.remoteConnectedVia(path.label);
@@ -630,7 +639,9 @@ class _RelayRow extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final hostRef = HostRef.relay(host.id, name: host.name);
     final status = active ? ref.watch(hostLinkStatusProvider(hostRef)).value : null;
-    final view = status == null ? HostStatusView.ofRelayHost(host) : HostStatusView.ofLink(status);
+    final view = status == null
+        ? HostStatusView.ofRelayHost(host)
+        : HostStatusView.ofLink(status, silentConnect: ref.watch(agentSwitchReconnectProvider));
     return Semantics(
       key: ValueKey('remote-row-${host.id}'),
       selected: active,

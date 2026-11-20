@@ -30,7 +30,7 @@ import '../../state/draft_store.dart';
 import '../../state/drawer_view_state.dart';
 import '../../state/engine_control.dart';
 import '../../state/engine_settings_state.dart' show engineSettingsProvider;
-import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
+import '../../state/hosts_state.dart' show HostKind, activeHostProvider, hostLabel;
 import '../../state/media_generation.dart';
 import '../../state/mention_state.dart';
 import '../../state/models_state.dart';
@@ -885,6 +885,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (ok.isNotEmpty) {
       setState(() => _drafts = [..._drafts, ...ok]);
       _saveDraft();
+      // The ＋ sheet was modal and took focus away; a chip appearing in the
+      // tray is not enough — put the caret back so typing lands immediately.
+      // Guarded by ok.isNotEmpty: a cancelled picker / permission denial / size
+      // overflow only shows a toast and must not raise the keyboard.
+      _focus.requestFocus();
     }
     if (problem != null) _toast(problem);
   }
@@ -1303,13 +1308,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final sessionId = ref.watch(currentSessionProvider);
+    // Agent switch rebuilds the link to the same Host in the background. Keep
+    // the last known host identity on screen for that short window: a real
+    // reconnect (network loss, retries) is unaffected, this only covers the
+    // deliberate "Codex → DSH" style switch.
+    final agentSwitching = ref.watch(agentSwitchReconnectProvider);
+    final activeHost = ref.watch(activeHostProvider);
     final connAsync = ref.watch(activeConnectionProvider);
     final conn = connAsync.value;
+    // The header label when the old connection has been retired but the new
+    // one is not ready yet: name the Host we are switching to, not 本机.
+    final switchLabel = agentSwitching
+        ? hostLabel(activeHost.kind, ref.watch(hostNameProvider(activeHost)))
+        : l10n.commonThisPhone;
     // 会话详情 is the native Harness's own session report (progress, subagents,
     // jobs); a CodeX or AGY conversation has no such page.
     final detailCaps = ref.watch(agentCapabilitiesProvider);
-    final connected = conn != null;
-    final local = ref.watch(activeHostProvider.select((h) => h.kind == HostKind.local));
+    final connected = conn != null || agentSwitching;
+    final local = activeHost.kind == HostKind.local;
     final starting = local && ref.watch(localRuntimeProvider.select((s) => s.status.phase == RuntimePhase.starting));
     final tidying = starting && ref.watch(localRuntimeProvider.select((s) => s.status.tidyingFiles));
     // The engine stopped on its own: the failure card above the empty state
@@ -1428,7 +1444,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final approval = chat?.approval;
     final question = chat?.question;
     final status = _status(
-      connecting: connAsync.isLoading && conn == null,
+      connecting: connAsync.isLoading && conn == null && !agentSwitching,
       starting: starting,
       connected: connected,
       idleLabel: switch (localIdle) {
@@ -1436,9 +1452,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         RuntimePhase.installed => l10n.commonStopped,
         _ => null,
       },
-      streamLost: chat?.streamLost ?? false,
+      streamLost: !agentSwitching && (chat?.streamLost ?? false),
       syncing: chat?.syncing ?? false,
-      label: conn?.label ?? l10n.commonThisPhone,
+      label: conn?.label ?? switchLabel,
       connection: chat?.connection,
       running: chat?.running ?? false,
       stopping: chat?.stopping ?? false,
@@ -1542,7 +1558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       const EngineFailureCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 20)),
                                     ChatEmptyState(
                                       connected: connected,
-                                      connecting: connAsync.isLoading,
+                                      connecting: connAsync.isLoading && !agentSwitching,
                                       starting: starting,
                                       tidying: tidying,
                                       idle: idle,
@@ -1710,8 +1726,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     duration: AppMotion.of(context, AppMotion.standard),
                                     curve: AppMotion.std,
                                     alignment: Alignment.bottomCenter,
-                                    child: connected && sessionId != null && !(chat?.controlReady ?? true)
-                                        ? Padding(
+                                    // An Agent switch retires the old client and
+                                    // re-links in the background. Any banner still
+                                    // in the chat state belongs to that old link;
+                                    // a genuine failure shows again once the window
+                                    // closes.
+                                    child: agentSwitching
+                                        ? const SizedBox(width: double.infinity)
+                                        : connected && sessionId != null && !(chat?.controlReady ?? true)
+                                            ? Padding(
                                             padding: const EdgeInsets.only(bottom: 8),
                                             child: ErrorBanner(
                                               info: !(chat?.streamLost ?? false),
