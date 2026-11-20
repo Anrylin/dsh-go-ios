@@ -4,7 +4,6 @@
 // real failures stay visible, and notice/error banners survive.
 
 import 'package:dsh_app/l10n/l10n.dart';
-import 'package:dsh_app/remote/link_status.dart';
 import 'package:dsh_app/state/attachments.dart';
 import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
@@ -14,6 +13,7 @@ import 'package:dsh_app/ui/chat/widgets/attachments.dart';
 import 'package:dsh_app/ui/remote/host_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/harness.dart';
@@ -131,7 +131,7 @@ void main() {
     _testActive = active;
     await tester.pumpWidget(
       testApp(
-        const _StatusProbe(other),
+        const _StatusProbe(HostRef.ssh('other')),
         overrides: [
           agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new),
           activeHostProvider.overrideWith(_FixedActiveHost.new),
@@ -151,16 +151,18 @@ void main() {
     final harness = ChatHarness(
       session: 's',
       states: {'s': ChatState(loading: false, error: sentinel)},
-      extra: [
-        agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new),
-        activeConnectionProvider.overrideWithValue(
-          AsyncError<HostConnection?>(StateError('boom'), StackTrace.current),
-        ),
-      ],
+      extra: [agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new)],
     );
     await tester.pumpWidget(
       testApp(
-        const ChatScreen(),
+        ProviderScope(
+          overrides: [
+            activeConnectionProvider.overrideWithValue(
+              AsyncError<HostConnection?>(StateError('boom'), StackTrace.current),
+            ),
+          ],
+          child: const ChatScreen(),
+        ),
         overrides: harness.overrides,
       ),
     );
@@ -183,5 +185,45 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text(sentinel), findsOneWidget);
+  });
+
+  testWidgets('typing during an Agent switch still sends to the target Agent', (tester) async {
+    // 旧 client 已退、新 client 还没连上:只有切换静默窗口让它可输入可发送。
+    final harness = ChatHarness(
+      session: 's',
+      connected: false,
+      extra: [agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new)],
+    );
+    await tester.pumpWidget(
+      testApp(const ChatScreen(), overrides: harness.overrides),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    const message = '切换中也要能发';
+    await tester.enterText(find.byType(EditableText), message);
+    await pumpFrames(tester);
+
+    final sendKey = find.bySemanticsLabel(appL10n.commonSend);
+    expect(sendKey, findsOneWidget);
+    await tester.tap(sendKey);
+    await pumpFrames(tester);
+
+    expect(harness.controllers['s']!.sent, [message]);
+    expect(find.text(appL10n.chatConnecting), findsNothing);
+    expect(find.text(appL10n.chatConnectToSend), findsNothing);
+  });
+
+  testWidgets('without a target session the silent window stays disconnected', (tester) async {
+    final harness = ChatHarness(
+      connected: false,
+      extra: [agentSwitchReconnectProvider.overrideWith(_AlwaysSilent.new)],
+    );
+    await tester.pumpWidget(
+      testApp(const ChatScreen(), overrides: harness.overrides),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    expect(find.text(appL10n.chatConnectToSend), findsOneWidget);
+    expect(harness.controllers, isEmpty);
   });
 }

@@ -1443,6 +1443,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       });
     }
 
+    // 输入条在 Agent 切换的静默窗口里照常可用:同一个 Host、同一个会话,只是
+    // 链路在换。发送会进目标 Agent 的离线队列并显示成待发气泡(没有 client 时
+    // ChatController.send 走 _sendOffline),不是失败,也不该让人打完的字无处可去。
+    // 只对已经在这个 Host 上的会话放开:没有会话时连创建都需要 client,仍按未连接
+    // 处理。真正的重连(conn 还在、状态是 reconnecting)和失败(hasError)不受影响。
+    final switchSendable = silentWindow && sessionId != null;
+    final composerConnected = conn != null || switchSendable;
+    final composerReady = switchSendable || (chat?.controlReady ?? true);
     final title = switch (chat?.title ?? listedTitle) {
       final t? when t.trim().isNotEmpty => chatTitleShown(t.trim()),
       _ => l10n.commonNewChat,
@@ -1871,10 +1879,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     // The page's context: Scaffold drops the keyboard inset below.
                                     maxLines: Composer.linesFor(context),
                                     focusNode: _focus,
-                                    connected: connected,
+                                    connected: composerConnected,
                                     running: chat?.running ?? false,
                                     stopping: chat?.stopping ?? false,
-                                    sessionReady: chat?.controlReady ?? true,
+                                    sessionReady: composerReady,
                                     busy: _creating != null || _syncWait != null,
                                     // The header, the tool row and the strip
                                     // already say an approval waits: the hint
@@ -1895,13 +1903,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                         ? l10n.mediaHintVideo
                                         : l10n.mediaHintImage,
                                     onSend: _send,
-                                    onSendOptions: chat?.controlReady ?? true ? _sendOptions : null,
+                                    onSendOptions: composerReady ? _sendOptions : null,
                                     voice: _voice,
                                     onKeyEvent: _mentions.handleKey,
-                                    onContentInserted: connected ? _pasteContent : null,
+                                    onContentInserted: composerConnected ? _pasteContent : null,
                                     onStop: _stop,
                                     hasAttachments: _drafts.isNotEmpty,
-                                    leading: AttachButton(onPressed: connected ? _attach : null),
+                                    leading: AttachButton(onPressed: composerConnected ? _attach : null),
                                     tray: ComposerTrayStack.maybe(
                                       quote: switch (quote) {
                                         final quote? => QuoteChip(
