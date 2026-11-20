@@ -56,6 +56,88 @@ class HostConnection {
   final String? workingDirectory;
 }
 
+/// True only while the *current Host's* Agent choice is silently reconnecting.
+///
+/// The old link is disposed by [RemoteConnectionController] the moment the
+/// Agent changes; keeping its client would be a fake connection. This flag is
+/// a UI hint, not a connection: while it is set the chat paints the target
+/// Agent's cached transcript and queues sends under that Agent, so no
+/// "connecting" / "connection lost" state covers the conversation. It clears
+/// when a connection for the chosen Agent is published, or after a short
+/// timeout so a failed connect cannot leave the hint stuck forever. A stale
+/// build that publishes the previous Agent cannot clear it, and each new
+/// switch restarts the timer (no fast-switch race).
+final agentSwitchReconnectProvider =
+    NotifierProvider<AgentSwitchReconnectController, bool>(AgentSwitchReconnectController.new);
+
+class AgentSwitchReconnectController extends Notifier<bool> {
+  static const reconnectTimeout = Duration(seconds: 15);
+
+  HostRef? _host;
+  RemoteAgent? _agent;
+  bool _active = false;
+  Timer? _timer;
+  Object? _generation;
+
+  @override
+  bool build() {
+    final host = ref.watch(activeHostProvider);
+    final agent = ref.watch(activeAgentProvider);
+    final previousHost = _host;
+    final previousAgent = _agent;
+    _host = host;
+    _agent = agent;
+
+    // A Host change also changes `activeAgent` (the choice is per Host). Only
+    // choosing a different Agent for the *same* Host is an Agent switch; an
+    // equal choice is a no-op, and a different Host starts its own connection.
+    if (previousHost != null && previousHost != host) {
+      _later(_finish);
+    } else if (previousAgent != null && previousAgent != agent) {
+      _later(() {
+        // A connect can finish before the microtask runs. There is nothing to
+        // hide then; this must not leave the flag on for the full timeout.
+        if (identical(_agent, agent) && ref.read(activeConnectionProvider).value?.agent != agent) _begin();
+      });
+    }
+
+    // The replacement link proves the switch settled. A stale value from the
+    // retired build still names the old Agent and cannot clear the flag.
+    ref.listen(activeConnectionProvider, (_, next) {
+      if (_active && next.value?.agent == _agent) _finish();
+    });
+    ref.onDispose(() => _timer?.cancel());
+    return _active;
+  }
+
+  /// State may only be written after [build] has returned.
+  void _later(void Function() action) {
+    unawaited(Future<void>.microtask(() {
+      if (ref.mounted) action();
+    }));
+  }
+
+  void _begin() {
+    if (!ref.mounted) return;
+    _active = true;
+    final generation = _generation = Object();
+    state = true;
+    _timer?.cancel();
+    _timer = Timer(reconnectTimeout, () {
+      if (identical(generation, _generation)) _finish();
+    });
+  }
+
+  void _finish() {
+    if (!_active) return;
+    _active = false;
+    _generation = null;
+    _timer?.cancel();
+    _timer = null;
+    if (ref.mounted) state = false;
+  }
+}
+
 typedef LocalClientConnector = Future<DshClient> Function({required Uri baseUri, required String token});
 
 /// [DshClient.connect]; tests swap it to decide when a connect finishes.
