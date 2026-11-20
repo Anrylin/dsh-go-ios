@@ -54,6 +54,9 @@ final class MemoryPendingSendStore extends PendingSendStore {
 
   final _byKey = <PendingSendKey, List<PendingSend>>{};
 
+  /// All durable entries, for tests that assert a refused send stayed queued.
+  List<PendingSend> get all => _byKey.values.expand((entries) => entries).toList();
+
   @override
   Future<List<PendingSend>> load(PendingSendKey key) async =>
       List.unmodifiable(_byKey[key] ?? const <PendingSend>[]);
@@ -210,6 +213,7 @@ class FakeChatController extends ChatController {
     SendMode mode = SendMode.now,
     bool verbatim = false,
     String? replayRequestId,
+    PendingSendKey? replayKey,
     Future<bool> Function(String requestId)? beforeDeliver,
     bool Function()? deliveryAllowed,
   }) async {

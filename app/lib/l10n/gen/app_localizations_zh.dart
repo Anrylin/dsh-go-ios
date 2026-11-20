@@ -15453,6 +15453,18 @@ class L10nZh extends L10n {
   String get stateChatWriterHeld => '这个对话正在别处使用';
 
   @override
+  String get stateChatCodexThreadBusy => '另一端正在操作这个 Codex 对话，等它结束后会自动重试';
+
+  @override
+  String get stateChatCodexNotOwner => '这个 Codex 回合由另一端发起，这里不能停止或插话';
+
+  @override
+  String get stateChatCodexWaiting => '另一端正在操作这个 Codex 对话，稍后自动重试';
+
+  @override
+  String get stateChatCodexWaitingManual => '另一端仍在操作这个 Codex 对话，消息已保留，可稍后手动重试';
+
+  @override
   String get stateChatModelUnavailable => '这个模型现在用不了';
 
   @override

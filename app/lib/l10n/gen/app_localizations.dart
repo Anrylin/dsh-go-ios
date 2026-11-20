@@ -28310,6 +28310,30 @@ abstract class L10n {
   /// **'这个对话正在别处使用'**
   String get stateChatWriterHeld;
 
+  /// No description provided for @stateChatCodexThreadBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一端正在操作这个 Codex 对话，等它结束后会自动重试'**
+  String get stateChatCodexThreadBusy;
+
+  /// No description provided for @stateChatCodexNotOwner.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Codex 回合由另一端发起，这里不能停止或插话'**
+  String get stateChatCodexNotOwner;
+
+  /// No description provided for @stateChatCodexWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一端正在操作这个 Codex 对话，稍后自动重试'**
+  String get stateChatCodexWaiting;
+
+  /// No description provided for @stateChatCodexWaitingManual.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一端仍在操作这个 Codex 对话，消息已保留，可稍后手动重试'**
+  String get stateChatCodexWaitingManual;
+
   /// No description provided for @stateChatModelUnavailable.
   ///
   /// In zh, this message translates to:
