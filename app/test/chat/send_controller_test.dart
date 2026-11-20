@@ -224,24 +224,28 @@ void main() {
 
   // 「发送失败」 with no reason was the bug: the CodeX codes had no sentence,
   // so the banner said only 「发送失败」 and the cause never reached the log.
+  //
+  // A CODEX_THREAD_BUSY prompt no longer *fails* here: the dual-client merge
+  // keeps the bubble and schedules an automatic retry (codex_busy_test.dart).
+  // These tests stay on ordinary refusals, which still fail the send.
   group('a failed send keeps its cause', () {
-    test('a CodeX busy thread is worded, and its code survives for 详情', () async {
-      client.promptError = const DshRemoteException('CODEX_THREAD_BUSY', 'thread busy', {'code': 'CODEX_THREAD_BUSY'});
+    test('a refused send is worded, and its code survives for 详情', () async {
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
       expect(await chat().send('你好'), isFalse);
-      expect(state().error, '发送失败：另一端正在操作这个 Codex 对话，等它结束后会自动重试');
-      expect(chatErrorDetails(state().errorCause), contains('CODEX_THREAD_BUSY'));
+      expect(state().error, '发送失败：AI 正忙，稍后再试');
+      expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
     });
 
     test('a stream event republish keeps the details visible', () async {
-      client.promptError = const DshRemoteException('CODEX_THREAD_BUSY', 'busy', {'code': 'CODEX_THREAD_BUSY'});
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
       expect(await chat().send('你好'), isFalse);
-      expect(chatErrorDetails(state().errorCause), contains('CODEX_THREAD_BUSY'));
+      expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
       // Any watch event schedules the 32ms _publish(), which rebuilds ChatState
       // from scratch. The cause must travel with the headline through it.
       client.events.add(const SessionStatusEvent('s1', false));
       await settle();
-      expect(state().error, '发送失败：另一端正在操作这个 Codex 对话，等它结束后会自动重试');
-      expect(chatErrorDetails(state().errorCause), contains('CODEX_THREAD_BUSY'));
+      expect(state().error, '发送失败：AI 正忙，稍后再试');
+      expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
     });
 
     test('an unmapped code says only 发送失败, never the Host text', () async {
@@ -260,14 +264,14 @@ void main() {
     });
 
     test('a later error without a cause never shows the previous one’s', () async {
-      client.promptError = const DshRemoteException('CODEX_THREAD_BUSY', 'busy', {'code': 'CODEX_THREAD_BUSY'});
+      client.promptError = const DshRemoteException('session/agent-busy', 'busy', {'reason': 'x'});
       await chat().send('你好');
-      expect(chatErrorDetails(state().errorCause), contains('CODEX_THREAD_BUSY'));
+      expect(chatErrorDetails(state().errorCause), contains('agent-busy'));
       // A different failure, this time carrying no details of its own.
-      client.promptError = const DshRemoteException('session/agent-busy', 'busy');
+      client.promptError = const DshRemoteException('session/writer-held', 'held');
       expect(await chat().send('再试一次'), isFalse);
-      expect(state().error, '发送失败：AI 正忙，稍后再试');
-      expect(chatErrorDetails(state().errorCause), isNot(contains('CODEX_THREAD_BUSY')));
+      expect(state().error, '发送失败：这个对话正在别处使用');
+      expect(chatErrorDetails(state().errorCause), isNot(contains('agent-busy')));
       expect(await chat().send('第三次'), isFalse);
       client.promptError = null;
       expect(await chat().send('第四次'), isTrue);
