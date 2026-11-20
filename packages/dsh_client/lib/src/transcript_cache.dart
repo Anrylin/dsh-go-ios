@@ -104,6 +104,99 @@ class TranscriptCache {
     });
   }
 
+  /// The live draft sidecar for [sessionId] on [hostId], or `null`.
+  ///
+  /// The durable window intentionally drops streaming rows; this is the only
+  /// place a still-running reply survives a restart, and it is deleted by the
+  /// first authoritative snapshot.
+  Future<CachedDraft?> loadDraft({required String hostId, required String sessionId, String? account}) {
+    return _serialized(() async {
+      try {
+        final file = _draftFile(hostId, sessionId);
+        if (!await file.exists()) return null;
+        if (await file.length() > maxEntryBytes) {
+          await _delete(file);
+          return null;
+        }
+        CachedDraft? draft;
+        try {
+          draft = CachedDraft.fromJson(jsonDecode(await file.readAsString()));
+        } catch (_) {
+          await _delete(file);
+          return null;
+        }
+        if (draft == null || draft.hostId != hostId || draft.sessionId != sessionId) {
+          await _delete(file);
+          return null;
+        }
+        final known = account;
+        if (known != null && known.isNotEmpty && draft.account.isNotEmpty && known != draft.account) {
+          await _delete(file);
+          return null;
+        }
+        await file.setLastModified(DateTime.fromMillisecondsSinceEpoch(_now()));
+        return draft;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  /// Writes [draft] atomically to the sidecar, with the same bounds as a window.
+  Future<void> saveDraft(CachedDraft draft) {
+    return _serialized(() async {
+      File? temporary;
+      try {
+        final payload = draft.toJson();
+        if (payload == null) return;
+        final bytes = utf8.encode(jsonEncode(payload));
+        if (bytes.length > maxEntryBytes) return;
+        final file = _draftFile(draft.hostId, draft.sessionId);
+        await file.parent.create(recursive: true);
+        temporary = File.fromUri(file.uri.resolve('${file.uri.pathSegments.last}.tmp-${uuidV4()}').normalizePath());
+        await temporary.create(exclusive: true);
+        await temporary.writeAsBytes(bytes, flush: true);
+        await temporary.rename(file.path);
+        await file.setLastModified(DateTime.fromMillisecondsSinceEpoch(_now()));
+        await _prune();
+      } catch (_) {
+        // A cache write never fails the conversation it describes.
+      } finally {
+        try {
+          if (temporary != null) await temporary.delete();
+        } on FileSystemException {
+          /* Missing after rename, or best effort cleanup. */
+        }
+      }
+    });
+  }
+
+  /// Drops the sidecar once the Host's snapshot makes it obsolete.
+  ///
+  /// [account] keeps an account switch from deleting a sidecar that belongs to
+  /// another account under the same host/session key; that account's own
+  /// [clearAccount] is responsible for retiring it.
+  Future<void> clearDraft({
+    required String hostId,
+    required String sessionId,
+    String? account,
+  }) {
+    return _serialized(() async {
+      final file = _draftFile(hostId, sessionId);
+      if (account != null && account.isNotEmpty) {
+        try {
+          if (await file.exists()) {
+            final draft = CachedDraft.fromJson(jsonDecode(await file.readAsString()));
+            if (draft != null && draft.account.isNotEmpty && draft.account != account) return;
+          }
+        } catch (_) {
+          // Unreadable sidecars are not provably another account's to keep.
+        }
+      }
+      await _delete(file);
+    });
+  }
+
   /// Drops the windows written under [account] (the others stay).
   Future<void> clearAccount(String account) {
     if (account.isEmpty) return Future.value();
@@ -112,8 +205,10 @@ class TranscriptCache {
         await for (final entity in _directory.list(recursive: true, followLinks: false)) {
           if (entity is! File || !entity.path.endsWith('.json')) continue;
           try {
-            final window = CachedTranscript.fromJson(jsonDecode(await entity.readAsString()));
-            if (window != null && window.account == account) await _delete(entity);
+            final raw = jsonDecode(await entity.readAsString());
+            final isDraft = entity.path.endsWith('.draft.json');
+            final owner = isDraft ? CachedDraft.fromJson(raw)?.account : CachedTranscript.fromJson(raw)?.account;
+            if (owner == account) await _delete(entity);
           } catch (_) {
             // An unreadable window is not provably this account's to keep.
           }
@@ -153,10 +248,24 @@ class TranscriptCache {
   File _file(String hostId, String sessionId) =>
       File.fromUri(_directory.absolute.uri.resolve('h-${_tag(hostId)}/s-${_tag(sessionId)}.json').normalizePath());
 
+  /// The sidecar's name is derived from the window's, so one session's two
+  /// files sit together and share the same identity/LRU rules.
+  File _draftFile(String hostId, String sessionId) => File.fromUri(
+        _directory.absolute.uri.resolve('h-${_tag(hostId)}/s-${_tag(sessionId)}.draft.json').normalizePath(),
+      );
+
   Future<void> _prune() async {
     final stats = <File, FileStat>{};
     await for (final entity in _directory.list(recursive: true, followLinks: false)) {
-      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      if (entity is! File) continue;
+      // A crash between creating and renaming a draft's `.tmp-uuid` leaves a
+      // file that no loader ever reads. All writers use the same serialized
+      // queue, so any temp file seen here is residue, not an active write.
+      if (entity.path.contains('.tmp-')) {
+        await _delete(entity);
+        continue;
+      }
+      if (!entity.path.endsWith('.json')) continue;
       try {
         stats[entity] = await entity.stat();
       } on FileSystemException {

@@ -25,6 +25,11 @@ import 'transcript_cache.dart';
 /// so the durable stores never see an empty owner field.
 const localChatOwner = 'local';
 
+/// A running turn writes at most once per interval (or after [cacheFlushChunks]
+/// stream chunks); a settled turn writes at once.
+const cacheFlushInterval = Duration(milliseconds: 750);
+const cacheFlushChunks = 32;
+
 /// How a message sent while a turn is running reaches the agent.
 enum SendMode {
   /// Idle session: starts a turn.
@@ -512,6 +517,38 @@ class ChatController extends Notifier<ChatState> {
   /// Sequence the cached window on disk ends at: nothing older is written over it.
   int? _cachedSeq;
 
+  // ---- Incremental transcript cache -------------------------------------
+  /// Captured the first time this controller needs the cache; onDispose uses
+  /// the same future for one last write instead of starting a new provider.
+  Future<TranscriptCache>? _cacheFuture;
+
+  /// Invalidated on Host/Agent switch and on dispose, so a queued write from
+  /// the retired conversation cannot land under the new one's key.
+  Object _cacheScope = Object();
+
+  /// Key this controller last wrote (also used by the dispose flush).
+  String? _cacheKey;
+  String _cacheAccount = localChatOwner;
+
+  Timer? _cacheTimer;
+  DateTime? _lastCacheWrite;
+
+  /// `(cursor, items.length, title, hasMoreHistory, draftRevision)`.
+  ({int cursor, int length, String? title, bool more, int revision})? _cacheSignature;
+
+  /// Signature the window seed was published with. A later sidecar load may
+  /// refine that seed only while the transcript still looks exactly the same.
+  ({int cursor, int length, String? title, bool more, int revision})? _seedSignature;
+
+  /// Bumped by a live draft change; stored in the sidecar for dedup/recovery.
+  int _draftRevision = 0;
+  int _cacheChunks = 0;
+  bool _cacheForce = false;
+
+  /// Whether a sidecar was written for this conversation in this controller;
+  /// avoids an unlink on every settled publish.
+  bool _draftOnDisk = false;
+
   /// Pending sends written to disk, with the exact key they were stored under.
   final _outboxKeys = <String, PendingSendKey>{};
 
@@ -583,8 +620,19 @@ class ChatController extends Notifier<ChatState> {
     // Nothing from the old link may survive into the target conversation.
     if (_agent != null && _agent != agent) _resetForAgentSwitch();
     _agent = agent;
+    final cacheKey = _cacheHostId(host, agent);
+    if (_cacheKey != null && _cacheKey != cacheKey) {
+      // Same session id on another Host: the cached window must be read under
+      // the new key, and a queued write for the old Host must never land.
+      _resetCacheBookkeeping();
+      _seedKey = null;
+      _cachedSeq = null;
+    }
+    _cacheKey = cacheKey;
+    _cacheAccount = ref.read(accountProvider).profile?.id ?? localChatOwner;
     ref.listen(accountProvider.select((s) => s.profile?.id), (previous, next) {
       if (previous != null && previous != next) {
+        _cacheAccount = next ?? localChatOwner;
         _outboxKeys.clear();
         _restartIds.clear();
         _offlineDeliveryAllowed.clear();
@@ -648,6 +696,10 @@ class ChatController extends Notifier<ChatState> {
     // client at all, even when the selected async value still carries it.
     final client = _client;
     ref.onDispose(() {
+      // A controller released after 60 s (or switched away) still owes the
+      // last few tokens: one final best-effort write before the cache future
+      // and this Ref go away.
+      _flushCache(force: true, disposing: true);
       // Invalidation runs before a lazy rebuild replaces the still-mounted Ref.
       _modelChange = null;
       _listenOwner = Object();
@@ -723,6 +775,7 @@ class ChatController extends Notifier<ChatState> {
     _snapshotGeneration = null;
     _seedKey = null;
     _cachedSeq = null;
+    _resetCacheBookkeeping();
     _lookupKey = null;
     _branchPoints.clear();
     _replyIds.clear();
@@ -828,22 +881,19 @@ class ChatController extends Notifier<ChatState> {
       host.kind == HostKind.relay ? '${host.kind.name}:${host.id}:${agent.code}' : '${host.kind.name}:${host.id}';
 
   /// Seeds the loaded transcript with the cached window for this session, once
-  /// per Host; a snapshot arriving meanwhile wins.
+  /// per Host; a snapshot arriving meanwhile wins. The sidecar is read with it:
+  /// a reply that was still streaming when the app died lives only there.
   void _seedFromCache() {
     final host = ref.read(activeHostProvider);
     final key = _cacheHostId(host, ref.read(activeAgentProvider));
     if (_seedKey == key) return;
     _seedKey = key;
     final owner = ref;
-    owner
-        .read(transcriptCacheProvider.future)
-        .then(
-          (cache) => cache.load(
-            hostId: key,
-            sessionId: sessionId,
-            account: owner.read(accountProvider).profile?.id ?? localChatOwner,
-          ),
-        )
+    final Future<TranscriptCache> cacheFuture = _cacheFuture ?? owner.read(transcriptCacheProvider.future);
+    _cacheFuture = cacheFuture;
+    final account = owner.read(accountProvider).profile?.id ?? localChatOwner;
+    cacheFuture
+        .then((cache) => cache.load(hostId: key, sessionId: sessionId, account: account))
         .then((window) {
           if (!owner.mounted || _seedKey != key) return;
           if (owner.read(activeHostProvider) != host || _currentAgentKey() != key) return;
@@ -851,38 +901,226 @@ class ChatController extends Notifier<ChatState> {
           // Agent switch clears it and resets _seedKey, so the target Agent's
           // cached window is read even though this controller was reused.
           if (_synchronized || _transcript.cursor >= 0 || _transcript.items.isNotEmpty) return;
-          if (window == null) return;
+          if (window == null || window.items.isEmpty) return;
           _transcript.seedItems(window.items, title: window.title);
-          _cachedSeq = window.cursor;
+          _cachedSeq = window.cursor >= 0 ? window.cursor : null;
+          // Both signatures use the live cursor (-1 until a snapshot), so the
+          // seed does not provoke a redundant write of its own window.
+          _seedSignature = _signature(_transcript.cursor, _transcript.items);
+          _cacheSignature = _seedSignature;
+          state = _retained(loading: false, syncing: _client == null ? false : state.syncing);
+        })
+        .ignore();
+    // The sidecar is a separate, smaller read. Loading it must not hold back
+    // the window that can paint the conversation right away; it refines the
+    // seed below only while nothing has changed the transcript since.
+    cacheFuture
+        .then((cache) => cache.loadDraft(hostId: key, sessionId: sessionId, account: account))
+        .then((draft) {
+          if (draft == null || draft.items.isEmpty) return;
+          if (!owner.mounted || _seedKey != key) return;
+          if (owner.read(activeHostProvider) != host || _currentAgentKey() != key) return;
+          if (_synchronized || _draftRevision != 0 || _seedSignature != _cacheSignature) return;
+          if (_seedSignature == null && _transcript.items.isNotEmpty) return;
+          final windowCursor = _cachedSeq ?? -1;
+          final items = draft.cursor < windowCursor
+              ? [
+                  ..._transcript.items,
+                  for (final row in draft.items)
+                    if (_isLiveRow(row) && !_transcript.items.any((existing) => existing.key == row.key)) row,
+                ]
+              : draft.items;
+          if (items.isEmpty) return;
+          _transcript.seedItems(items, title: draft.title);
+          _draftRevision = draft.revision;
+          // The sidecar is on disk and still live. Without this mark the first
+          // authoritative snapshot (or an Agent switch) would never clear it.
+          _draftOnDisk = true;
+          final signature = _signature(_transcript.cursor, _transcript.items);
+          _seedSignature = signature;
+          _cacheSignature = signature;
           state = _retained(loading: false, syncing: _client == null ? false : state.syncing);
         })
         .ignore();
   }
 
-  /// Writes the visible window once a turn settles, so a restart or a switch
-  /// back paints it. A snapshot whose cursor moved backwards never overwrites
-  /// the newer window already on disk.
-  void _saveToCache(String key) {
-    // A late publish from a retired Agent must never write into the target's
-    // namespace, even if its transcript still held the old window.
-    if (key != _currentAgentKey()) return;
-    final cursor = _transcript.cursor;
-    if (cursor < 0) return;
-    final cached = _cachedSeq;
-    if (cached != null && cursor <= cached) return;
+  /// A row with no durable `seq` is a live draft: it cannot be part of a window.
+  bool _isLiveRow(ChatItem item) => switch (item) {
+    UserChatItem() || NoticeChatItem() => false,
+    AssistantChatItem(:final seq) => seq == null,
+    ToolChatItem(:final seq) => seq == null,
+  };
+
+  /// Everything that changes the bytes on disk, including a draft's growing
+  /// text (which does not change the item count or the Host cursor).
+  ({int cursor, int length, String? title, bool more, int revision}) _signature(
+    int cursor,
+    List<ChatItem> items,
+  ) => (
+    cursor: cursor,
+    length: items.length,
+    title: _transcript.title,
+    more: _transcript.hasMoreHistory,
+    revision: _draftRevision,
+  );
+
+  /// Drops the marks a retired conversation left behind. The scope invalidates
+  /// writes already queued for its key; the rest makes the next Host start clean.
+  void _resetCacheBookkeeping() {
+    // If this controller had written a sidecar, the retired Host/Agent must not
+    // leave it behind: a later Agent key never reads another key's file, and a
+    // quick switch back re-seeds it from the durable window instead of a stale
+    // live reply. A switch back before this lands keeps the draft.
+    final retiredKey = _cacheKey;
+    final account = _cacheAccount;
+    final future = _cacheFuture;
+    if (retiredKey != null && _draftOnDisk && future != null) {
+      future
+          .then((cache) async {
+            if (_cacheKey == retiredKey) return;
+            await cache.clearDraft(hostId: retiredKey, sessionId: sessionId, account: account);
+          })
+          .ignore();
+    }
+    _draftOnDisk = false;
+    _cacheTimer?.cancel();
+    _cacheTimer = null;
+    _cacheScope = Object();
+    _cacheSignature = null;
+    _seedSignature = null;
+    _lastCacheWrite = null;
+    _cacheChunks = 0;
+    _cacheForce = false;
+    _draftRevision = 0;
+  }
+
+  /// Marks events whose result must survive an immediate kill. Deltas are
+  /// throttled; a stream boundary, a tool call or a turn end is not.
+  void _touchCache(DshEvent event) {
+    switch (event) {
+      case AssistantChunkEvent():
+        _draftRevision++;
+        _cacheChunks++;
+      case AssistantStreamStarted() ||
+        AssistantStreamEnded() ||
+        AssistantMessageEvent() ||
+        UserMessageEvent() ||
+        ToolCallEvent() ||
+        ToolResultEvent() ||
+        TurnStartedEvent() ||
+        TurnEndedEvent():
+        _draftRevision++;
+        _cacheForce = true;
+      default:
+        break;
+    }
+  }
+
+  /// Persists what is on screen. A settled turn writes at once; a running turn
+  /// writes at most once per [cacheFlushInterval] or after [cacheFlushChunks]
+  /// deltas, so a long reply cannot spin the disk. Durable rows go to the
+  /// window; rows with no `seq` yet go to the sidecar and are removed from it
+  /// once the Host snapshot makes them obsolete.
+  void _flushCache({required bool force, bool disposing = false}) {
+    final key = _cacheKey;
+    if (key == null) return;
+    if (!disposing && key != _currentAgentKey()) return;
     final items = _transcript.items;
     if (items.isEmpty) return;
-    final window = CachedTranscript(
-      account: ref.read(accountProvider).profile?.id ?? localChatOwner,
-      hostId: key,
-      sessionId: sessionId,
-      cursor: cursor,
-      title: _transcript.title,
-      hasMoreHistory: _transcript.hasMoreHistory,
-      items: items,
-    );
-    _cachedSeq = cursor;
-    ref.read(transcriptCacheProvider.future).then((cache) => cache.save(window)).ignore();
+    final cursor = _transcript.cursor;
+    // Before the first authoritative snapshot the Host cursor is unknown (-1).
+    // A sidecar written now would carry durable rows with `seq >= 0` next to
+    // `cursor: -1`, which `CachedDraft.fromJson` rejects as corrupt and deletes
+    // on the next start — losing the restored live reply. Leave the on-disk
+    // sidecar (or the absence of one) untouched until the snapshot lands.
+    if (cursor < 0) return;
+    final signature = _signature(cursor, items);
+    if (signature == _cacheSignature) {
+      _clearDraftIfStale(key: key, live: _transcript.hasLiveDraft);
+      return;
+    }
+    final urgent = force || _cacheForce || _cacheChunks >= cacheFlushChunks;
+    final last = _lastCacheWrite;
+    final now = DateTime.now();
+    if (!disposing && !urgent && last != null && now.difference(last) < cacheFlushInterval) {
+      _cacheTimer ??= Timer(cacheFlushInterval - now.difference(last), () {
+        _cacheTimer = null;
+        _flushCache(force: _cacheForce);
+      });
+      return;
+    }
+    _cacheTimer?.cancel();
+    _cacheTimer = null;
+    _cacheSignature = signature;
+    _lastCacheWrite = now;
+    _cacheChunks = 0;
+    _cacheForce = false;
+    final scope = _cacheScope;
+    final cache = _cacheFuture;
+    if (cache == null) return; // Nothing was ever written for this controller.
+    final live = _transcript.hasLiveDraft;
+    final revision = _draftRevision;
+    final account = _cacheAccount;
+    final title = _transcript.title;
+    final more = _transcript.hasMoreHistory;
+    final cached = _cachedSeq;
+    final freshWindow = cursor >= 1 && cursor > (cached ?? -1);
+    if (freshWindow) _cachedSeq = cursor;
+    cache
+        .then(
+          (cache) async {
+            if (!identical(scope, _cacheScope)) return;
+            if (freshWindow && cursor >= 0) {
+              await cache.save(
+                CachedTranscript(
+                  account: account,
+                  hostId: key,
+                  sessionId: sessionId,
+                  cursor: cursor,
+                  title: title,
+                  hasMoreHistory: more,
+                  items: items,
+                ),
+              );
+            }
+            if (!identical(scope, _cacheScope)) return;
+            if (live) {
+              _draftOnDisk = true;
+              await cache.saveDraft(
+                CachedDraft(
+                  account: account,
+                  hostId: key,
+                  sessionId: sessionId,
+                  cursor: cursor,
+                  revision: revision,
+                  title: title,
+                  hasMoreHistory: more,
+                  items: items,
+                ),
+              );
+            } else {
+              _clearDraftIfStale(key: key, live: false);
+            }
+          },
+        )
+        .ignore();
+  }
+
+  /// The sidecar holds a dead prompt once its turn settles; drop it exactly
+  /// once, and never for a conversation that was switched away in the meantime.
+  void _clearDraftIfStale({required String key, required bool live}) {
+    if (live || !_draftOnDisk) return;
+    _draftOnDisk = false;
+    final future = _cacheFuture;
+    if (future == null) return;
+    final scope = _cacheScope;
+    final account = _cacheAccount;
+    future
+        .then((cache) async {
+          if (!identical(scope, _cacheScope)) return;
+          await cache.clearDraft(hostId: key, sessionId: sessionId, account: account);
+        })
+        .ignore();
   }
 
   PendingSendKey _pendingKey() => PendingSendKey(
@@ -1113,6 +1351,7 @@ class ChatController extends Notifier<ChatState> {
             final before = reconcile ? _inboxIds() : const <String>{};
             if (event is SessionSnapshotEvent) _trackSnapshotClaims(event.events);
             final changed = _transcript.apply(event);
+            _touchCache(event);
             if (_awayLong && !_quiet && _transcript.running) scheduleMicrotask(_quietIfRunning);
             if (reconcile) {
               final removed = before.difference(_inboxIds());
@@ -1515,7 +1754,7 @@ class ChatController extends Notifier<ChatState> {
       goal: _transcript.goal,
       clockSkew: _skew ?? Duration.zero,
     );
-    if (!running && cacheKey == _currentAgentKey()) _saveToCache(cacheKey);
+    if (cacheKey == _currentAgentKey()) _flushCache(force: !running);
   }
 
   /// Our pending prompts with their inbox slot, plus prompts waiting in the

@@ -14,6 +14,9 @@ import 'transcript.dart';
 /// Shape version of a cached window; files with another version are dropped.
 const transcriptCacheVersion = 1;
 
+/// Shape version of the sidecar that keeps a live (unsettled) draft.
+const transcriptDraftVersion = 1;
+
 class CachedTranscript {
   const CachedTranscript({
     required this.account,
@@ -44,8 +47,11 @@ class CachedTranscript {
   Map<String, Object?>? toJson() {
     final rows = <Object?>[];
     for (final item in items) {
-      // A streaming assistant row is the draft of a message that commits later.
+      // Streaming rows (and tool calls whose arguments are still arriving) live
+      // in the sidecar only: a window with a `seq == null` row cannot be trusted
+      // after a restart, and one bad row must not lose the whole durable view.
       if (item is AssistantChatItem && (item.streaming || item.seq == null)) continue;
+      if (item is ToolChatItem && item.seq == null) continue;
       final row = _rowJson(item);
       if (row == null) return null;
       rows.add(row);
@@ -95,7 +101,97 @@ class CachedTranscript {
   }
 }
 
-Map<String, Object?>? _rowJson(ChatItem item) {
+/// The live side of a conversation: a full visible snapshot that may contain
+/// rows the durable window deliberately omits (a streaming assistant draft, a
+/// tool call whose arguments are still arriving).
+///
+/// Kept in a separate `*.draft.json` file so the durable window keeps its
+/// narrow contract: a restart paints the draft, and the first authoritative
+/// Host snapshot deletes the sidecar. An approval request is never restored —
+/// it was live on the old device and cannot be answered after a restart.
+class CachedDraft {
+  const CachedDraft({
+    required this.account,
+    required this.hostId,
+    required this.sessionId,
+    required this.cursor,
+    required this.revision,
+    required this.items,
+    this.title,
+    this.hasMoreHistory = false,
+  });
+
+  final String account;
+  final String hostId;
+  final String sessionId;
+
+  /// Sequence cursor the visible rows were read at (`-1` before any snapshot).
+  final int cursor;
+
+  /// Bumped whenever the live draft changes; part of the app's write dedup key.
+  final int revision;
+  final String? title;
+  final bool hasMoreHistory;
+  final List<ChatItem> items;
+
+  /// `null` when a row holds content this codec cannot rebuild, in which case
+  /// the previous sidecar stays on disk.
+  Map<String, Object?>? toJson() {
+    final rows = <Object?>[];
+    for (final item in items) {
+      final row = _rowJson(item, draft: true);
+      if (row == null) return null;
+      rows.add(row);
+    }
+    if (rows.isEmpty) return null;
+    return {
+      'v': transcriptDraftVersion,
+      'account': account,
+      'host': hostId,
+      'session': sessionId,
+      'cursor': cursor,
+      'rev': revision,
+      'more': hasMoreHistory,
+      'title': ?title,
+      'items': rows,
+    };
+  }
+
+  /// Reads a draft; `null` for another version or an untrustworthy shape.
+  static CachedDraft? fromJson(Object? json) {
+    final map = asMap(json);
+    if (map == null || asInt(map['v']) != transcriptDraftVersion) return null;
+    final hostId = asString(map['host']);
+    final sessionId = asString(map['session']);
+    final cursor = asInt(map['cursor']);
+    final revision = asInt(map['rev']);
+    if (hostId == null || hostId.isEmpty) return null;
+    if (sessionId == null || sessionId.isEmpty) return null;
+    if (cursor == null || cursor < -1) return null;
+    if (revision == null || revision < 0) return null;
+    final items = <ChatItem>[];
+    for (final row in asListOrEmpty(map['items'])) {
+      final item = _itemFromJson(row, draft: true);
+      if (item == null) return null;
+      final seq = _seqOf(item);
+      if (seq != null && seq > cursor) return null;
+      items.add(item);
+    }
+    if (items.isEmpty) return null;
+    return CachedDraft(
+      account: asString(map['account']) ?? '',
+      hostId: hostId,
+      sessionId: sessionId,
+      cursor: cursor,
+      revision: revision,
+      title: asString(map['title']),
+      hasMoreHistory: map['more'] == true,
+      items: items,
+    );
+  }
+}
+
+Map<String, Object?>? _rowJson(ChatItem item, {bool draft = false}) {
   switch (item) {
     case UserChatItem(
       :final seq,
@@ -129,19 +225,22 @@ Map<String, Object?>? _rowJson(ChatItem item) {
       :final interrupted,
       :final usage,
       :final model,
+      :final streaming,
     ):
-      if (seq == null || seq < 1) return null;
+      if (!draft && (seq == null || seq < 1)) return null;
+      if (draft && seq != null && seq < 1) return null;
       return {
         'type': 'a',
         'id': id,
         'rowKey': ?rowKey,
-        'seq': seq,
+        'seq': ?seq,
         'time': ?time?.millisecondsSinceEpoch,
         'text': text,
         'reasoning': reasoning,
         'interrupted': interrupted,
         'usage': ?_usageJson(usage),
         'model': ?model,
+        if (draft && streaming) 'streaming': true,
       };
     case ToolChatItem(
       :final callId,
@@ -154,7 +253,8 @@ Map<String, Object?>? _rowJson(ChatItem item) {
       :final approvalOutcome,
       :final meta,
     ):
-      if (seq == null || seq < 1) return null;
+      if (!draft && (seq == null || seq < 1)) return null;
+      if (draft && seq != null && seq < 1) return null;
       final parts = <Object?>[];
       for (final part in resultParts) {
         final partJson = _partJson(part);
@@ -166,8 +266,8 @@ Map<String, Object?>? _rowJson(ChatItem item) {
         'callId': callId,
         'name': name,
         'arguments': arguments,
-        'seq': seq,
-        'status': _statusName(status),
+        'seq': ?seq,
+        'status': draft ? _draftStatusName(status) : _statusName(status),
         'parts': parts,
         'failure': ?_toolFailureJson(failure),
         'outcome': ?_outcomeWire(approvalOutcome),
@@ -179,16 +279,17 @@ Map<String, Object?>? _rowJson(ChatItem item) {
   }
 }
 
-ChatItem? _itemFromJson(Object? json) {
+ChatItem? _itemFromJson(Object? json, {bool draft = false}) {
   final map = asMap(json);
   if (map == null) return null;
   final seq = asInt(map['seq']);
-  if (seq == null || seq < 1) return null;
+  if (!draft && (seq == null || seq < 1)) return null;
+  if (draft && seq != null && seq < 1) return null;
   switch (asString(map['type'])) {
     case 'u':
       final time = asEpochMs(map['time']);
       final text = asString(map['text']);
-      if (time == null || text == null) return null;
+      if (time == null || text == null || seq == null) return null;
       final images = <ImageAttachment>[];
       for (final raw in asListOrEmpty(map['images'])) {
         if (asMap(raw) == null) return null;
@@ -226,12 +327,13 @@ ChatItem? _itemFromJson(Object? json) {
         interrupted: map['interrupted'] == true,
         usage: usage,
         model: asString(map['model']),
+        streaming: draft && map['streaming'] == true,
       );
     case 't':
       final callId = asString(map['callId']);
       final name = asString(map['name']);
       final arguments = asString(map['arguments']);
-      final status = _statusFromName(asString(map['status']));
+      final status = draft ? _draftStatusFromName(asString(map['status'])) : _statusFromName(asString(map['status']));
       if (callId == null || name == null || arguments == null || status == null) return null;
       final parts = <Part>[];
       for (final raw in asListOrEmpty(map['parts'])) {
@@ -258,7 +360,7 @@ ChatItem? _itemFromJson(Object? json) {
     case 'n':
       final kind = asString(map['kind']);
       final text = asString(map['text']);
-      if (kind == null || text == null) return null;
+      if (kind == null || text == null || seq == null) return null;
       final rawFailure = map['failure'];
       final failure = rawFailure == null ? null : _failureFromJson(rawFailure);
       if (rawFailure != null && failure == null) return null;
@@ -291,6 +393,19 @@ ToolStatus? _statusFromName(String? name) => switch (name) {
   'denied' => ToolStatus.denied,
   'cancelled' => ToolStatus.cancelled,
   _ => null,
+};
+
+/// A draft may show arguments still streaming, but an approval request is
+/// live: it is written as `running`, never as an answerable `awaitingApproval`.
+String _draftStatusName(ToolStatus status) => switch (status) {
+  ToolStatus.streaming => 'streaming',
+  ToolStatus.awaitingApproval => 'running',
+  _ => _statusName(status),
+};
+
+ToolStatus? _draftStatusFromName(String? name) => switch (name) {
+  'streaming' => ToolStatus.streaming,
+  _ => _statusFromName(name),
 };
 
 String? _outcomeWire(ApprovalOutcome? outcome) => switch (outcome) {

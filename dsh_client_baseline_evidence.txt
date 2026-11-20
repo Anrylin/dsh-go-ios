@@ -1,0 +1,50 @@
+dsh_client full-suite baseline evidence for stream-cache incremental writes
+=========================================================================
+
+Environment
+  VM: mac (192.168.159.130)
+  Flutter: /Users/ssujo/dev/tools/flutter/bin
+  DSH_TEST_FONT_DIR=/Users/ssujo/dev/test-fonts
+  Base revision under comparison: cf67b3ae7fb6cfe4e960960f730867b63744ece8
+
+1) Clean baseline checkout (no stream-cache changes)
+----------------------------------------------------
+Directory: /Users/ssujo/dev/baseline-cf67b3a (git archive cf67b3a, fresh extract)
+Command:   cd /Users/ssujo/dev/baseline-cf67b3a/packages/dsh_client && flutter test
+Result:    +505 ~27 -2  -> 505 passed, 27 skipped, 2 failed
+
+Failing tests:
+  /Users/ssujo/dev/baseline-cf67b3a/packages/dsh_client/test/dsh_go_api_test.dart: stream lifecycle (fake socket) deferred results: hold for conn, done (also early), void, cancel, drop voids
+  /Users/ssujo/dev/baseline-cf67b3a/packages/dsh_client/test/transcript_incremental_test.dart: loading /Users/ssujo/dev/baseline-cf67b3a/packages/dsh_client/test/transcript_incremental_test.dart
+
+Exact error line from the run:
+  test/transcript_incremental_test.dart:4:8: Error: Dart library 'dart:mirrors' is not available on this platform.
+  import 'dart:mirrors';
+         ^
+
+2) Stream-cache branch checkout
+-------------------------------
+Directory: /Users/ssujo/dev/cache-stream-verify-5d (git archive of the branch HEAD plus the
+           review-fix files; same tree as the amended commit)
+Command:   cd /Users/ssujo/dev/cache-stream-verify-5d/packages/dsh_client && flutter test
+Result:    +515 ~27 -2  -> 515 passed, 27 skipped, 2 failed
+Delta:     +10 passing tests are the new draft-cache cases (7 initial + 3 review-fix tests);
+           the same 2 failures remain.
+
+Failing tests:
+  /Users/ssujo/dev/cache-stream-verify-5d/packages/dsh_client/test/dsh_go_api_test.dart: stream lifecycle (fake socket) deferred results: hold for conn, done (also early), void, cancel, drop voids
+  /Users/ssujo/dev/cache-stream-verify-5d/packages/dsh_client/test/transcript_incremental_test.dart: loading /Users/ssujo/dev/cache-stream-verify-5d/packages/dsh_client/test/transcript_incremental_test.dart
+
+Exact error line from the run:
+  test/transcript_incremental_test.dart:4:8: Error: Dart library 'dart:mirrors' is not available on this platform.
+  import 'dart:mirrors';
+         ^
+
+3) App suite on the same fixed tree
+-----------------------------------
+Command: cd /Users/ssujo/dev/cache-stream-verify-5d/app && flutter test
+Result:  +144  -> 144 passed, 0 failed (includes 8 stream_cache_test.dart cases).
+
+Conclusion: both failures are present on the untouched cf67b3a baseline and are not
+introduced by the streaming transcript cache changes. No additional failures appear
+on the branch (the only count change is +10 new passing draft-cache tests).
