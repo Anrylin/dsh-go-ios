@@ -549,17 +549,19 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     }
   }
 
-  /// Creates a session in the workspace the drawer shows (else the default
-  /// directory) and returns its id.
+  /// Creates a session in the selected workspace (or the one inferred from
+  /// the host's working directory, or its first workspace) and returns its id.
   Future<String> create() async {
     final conn = ref.read(activeConnectionProvider).value;
     if (conn == null) throw StateError('not connected');
     // Remote hosts: only the working directory configured for that host, else
-    // the remote DSH's own default.
+    // the remote DSH's own default. The same cwd lets a new session be attached
+    // to the workspace whose folder it lives in when nothing is selected.
+    final cwd = newChatCwd(conn);
     final created = await createSessionInWorkspace(
       conn.client,
-      await workspaceForNewSession(ref),
-      cwd: conn.isLocal ? localWorkspaceDir : conn.workingDirectory,
+      await workspaceForNewSession(ref, cwd: cwd),
+      cwd: cwd,
     );
     // Safe mode keeps the default preset: the agent there repairs the engine
     // with a full shell already, and every command should still be asked.

@@ -14,11 +14,14 @@ import 'dart:convert';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
+import '../runtime/local_paths.dart' show LocalPaths;
 import 'agent_selection_state.dart';
+import 'connection_state.dart' show HostConnection, activeConnectionProvider;
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
@@ -88,23 +91,42 @@ class WorkspacesController extends Notifier<WorkspacesState> {
   final Set<String> _removed = {};
   DshClient? _client;
   ReadListIdentity? _identity;
+  Completer<void>? _baseline;
+
+  /// Completes when the first `workspace/follow` baseline arrives, or when
+  /// the Host goes away / refuses the stream. New sessions wait on this:
+  /// `build` starts empty, and reading that empty registry by race would
+  /// create an ungrouped conversation. Bounded by callers.
+  Future<void> get baseline => _baseline?.future ?? Future.value();
+
+  /// Also used by test doubles that publish a baseline without the stream.
+  @visibleForTesting
+  void completeBaseline() {
+    if (_baseline?.isCompleted == false) _baseline!.complete();
+  }
 
   @override
   WorkspacesState build() {
     final r = ref;
+    _baseline?.complete();
+    _baseline = Completer<void>();
     _rows.clear();
     _order = const [];
     _removed.clear();
     final conn = r.watch(readListLiveConnectionProvider);
     _client = conn?.client;
     _identity = conn == null ? null : r.watch(readListIdentityProvider);
-    if (conn == null) return const WorkspacesState();
+    if (conn == null) {
+      completeBaseline();
+      return const WorkspacesState();
+    }
     final sub = conn.client.watchWorkspaces().listen(
       (update) {
         if (r.mounted) _onFrame(update);
       },
       onError: (Object _) {
         if (r.mounted && !state.ready) state = state.copyWith(status: WorkspacesStatus.failed);
+        completeBaseline();
       },
     );
     ref.onDispose(() => unawaited(sub.cancel()));
@@ -119,6 +141,8 @@ class WorkspacesController extends Notifier<WorkspacesState> {
         ..addEntries(full.workspaces.map((w) => MapEntry(w.workspaceId, w)));
       _order = [for (final w in full.workspaces) w.workspaceId];
       _emit(status: WorkspacesStatus.ready, pinned: full.pinnedSessionIds, archived: full.archivedSessionIds);
+      // The registry is usable now: a new chat may pick a workspace from it.
+      completeBaseline();
       return;
     }
     switch (update) {
@@ -297,6 +321,10 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
       ? 'workspaces.${host.kind.name}.${host.id}.${agent.code}'
       : 'workspaces.${host.kind.name}.${host.id}';
 
+  /// The pre-Agent key (0b995b2 made relay keys Agent-specific). Kept so an
+  /// existing relay choice is picked up once and copied to the Agent's key.
+  static String legacyKeyFor(HostRef host) => 'workspaces.${host.kind.name}.${host.id}';
+
   @override
   WorkspacePrefs build() {
     final host = ref.watch(activeHostProvider);
@@ -305,7 +333,8 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
         : RemoteAgent.dsh;
     final key = keyFor(host, agent: agent);
     _key = key;
-    _loading = _load(key);
+    final legacyKey = key == legacyKeyFor(host) ? null : legacyKeyFor(host);
+    _loading = _load(key, legacyKey);
     return const WorkspacePrefs();
   }
 
@@ -315,13 +344,30 @@ class WorkspacePrefsController extends Notifier<WorkspacePrefs> {
     return state.selected;
   }
 
-  Future<void> _load(String key) async {
+  Future<void> _load(String key, String? legacyKey) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(key);
+      var raw = prefs.getString(key);
+      var migrated = false;
+      if (raw == null && legacyKey != null) {
+        final old = prefs.getString(legacyKey);
+        if (old != null) {
+          raw = old;
+          migrated = true;
+        }
+      }
+      final next = raw == null ? const WorkspacePrefs(loaded: true) : WorkspacePrefs.fromJson(jsonDecode(raw));
       // The provider may have been disposed while prefs loaded.
       if (!ref.mounted || _key != key || state.loaded) return;
-      state = raw == null ? const WorkspacePrefs(loaded: true) : WorkspacePrefs.fromJson(jsonDecode(raw));
+      if (migrated) {
+        // Copy (do not delete) so later Agents still inherit the old choice.
+        // Write before publishing the state, and only if the user hasn't
+        // picked a workspace in the meantime: otherwise the legacy value
+        // would win on disk over their newer choice.
+        if (prefs.getString(key) == null) await prefs.setString(key, raw!);
+      }
+      if (!ref.mounted || _key != key || state.loaded) return;
+      state = next;
     } catch (_) {
       // No preferences backend (tests) or a damaged entry: start empty.
       if (ref.mounted && _key == key && !state.loaded) state = const WorkspacePrefs(loaded: true);
@@ -485,18 +531,109 @@ int workspaceConversationCount(Workspace w, Iterable<String> visible) {
   return visible.where(members.contains).length;
 }
 
-/// The workspace a new conversation starts in: the drawer's selection,
-/// checked against the host's list once that has arrived.
-Future<String?> workspaceForNewSession(Ref ref) async {
-  final selected = await ref.read(workspacePrefsProvider.notifier).selection();
-  if (selected == null) return null;
-  final registry = ref.read(workspacesProvider);
-  return registry.ready ? registry.byId(selected)?.workspaceId : selected;
+/// Normalizes a Host folder for comparison: both separators are accepted and
+/// only the root keeps its trailing slash.
+String _folderKey(String path) {
+  var value = path.trim().replaceAll('\\', '/');
+  while (value.length > 1 && value.endsWith('/')) {
+    value = value.substring(0, value.length - 1);
+  }
+  return value;
 }
 
-/// Creates a conversation in [workspaceId] when one is selected, else in
-/// [cwd] (null lets the host pick). Falls back to [cwd] if the workspace was
-/// removed in the meantime.
+/// The innermost workspace whose folder is [cwd] or contains it. Ties cannot
+/// happen after normalization, but the longest folder wins so a nested
+/// workspace beats its parent.
+Workspace? workspaceForFolder(Iterable<Workspace> workspaces, String? cwd) {
+  final folder = cwd == null ? '' : _folderKey(cwd);
+  if (folder.isEmpty) return null;
+  Workspace? best;
+  var bestLength = -1;
+  for (final w in workspaces) {
+    final candidate = _folderKey(w.path);
+    if (candidate.isEmpty || candidate.length <= bestLength) continue;
+    final prefix = candidate.endsWith('/') ? candidate : '$candidate/';
+    if (folder == candidate || folder.startsWith(prefix)) {
+      best = w;
+      bestLength = candidate.length;
+    }
+  }
+  return best;
+}
+
+/// cwd a conversation created now would use. Shared with the chip so its
+/// label names the same folder the resolver uses.
+String? newChatCwd(HostConnection? conn) => conn == null
+    ? null
+    : conn.isLocal
+        ? LocalPaths.workspace
+        : conn.workingDirectory;
+
+/// The workspace a new conversation would start in, from the registry, the
+/// drawer's [selected] id and [cwd]. A live selection wins, then the longest
+/// folder match, then the Host's first-use `default-workspace` (relay has no
+/// cwd, so without that every chat would land in the newest workspace), then
+/// the registry's first entry.
+Workspace? newChatWorkspaceFor(WorkspacesState registry, String? selected, String? cwd) {
+  if (selected != null) {
+    final known = registry.byId(selected);
+    if (known != null) return known;
+    // Still loading: the stored choice is all there is to go on. The caller
+    // keeps the raw id until the Host publishes its list.
+    if (!registry.ready) return null;
+    // Removed from the Host since: infer below instead of starting ungrouped.
+  }
+  final match = workspaceForFolder(registry.workspaces, cwd);
+  if (match != null) return match;
+  for (final w in registry.workspaces) {
+    if (w.title == 'default-workspace') return w;
+  }
+  return registry.workspaces.isEmpty ? null : registry.workspaces.first;
+}
+
+/// How long a new conversation waits for the registry baseline before giving
+/// up rather than silently creating an ungrouped session.
+@visibleForTesting
+Duration newChatBaselineTimeout = const Duration(seconds: 6);
+
+/// The workspace id for a new conversation. Null only when there is nothing
+/// to infer from (no selection, no registry); an ungrouped session is correct
+/// only then.
+Future<String?> workspaceForNewSession(Ref ref, {String? cwd}) async {
+  final selected = await ref.read(workspacePrefsProvider.notifier).selection();
+  if (selected != null) {
+    final known = ref.read(workspacesProvider).byId(selected);
+    // A live choice already is a workspaceId: no need to wait for the list.
+    if (known != null) return known.workspaceId;
+  }
+  // A fresh connect (or an Agent switch) rebuilds the registry as `loading`
+  // with no rows. Reading that snapshot is the "未分组" race.
+  await ref.read(workspacesProvider.notifier).baseline.timeout(newChatBaselineTimeout, onTimeout: () {});
+  final registry = ref.read(workspacesProvider);
+  if (registry.status == WorkspacesStatus.loading) {
+    // Still no baseline: `session/create` without a workspaceId would put
+    // the conversation in a folder nobody can see in the drawer.
+    throw StateError('workspace registry is still loading');
+  }
+  if (selected != null && !registry.ready) return selected;
+  return newChatWorkspaceFor(registry, selected, cwd)?.workspaceId;
+}
+
+/// Title for the new-chat chip when nothing is selected: the workspace the
+/// next conversation will actually start in, so the label cannot disagree
+/// with `session/create`.
+final newChatWorkspaceTitleProvider = Provider<String?>((ref) {
+  final registry = ref.watch(workspacesProvider);
+  final selected = ref.watch(workspacePrefsProvider.select((p) => p.selected));
+  final conn = ref.watch(activeConnectionProvider).value;
+  if (!registry.ready) return null;
+  final target = newChatWorkspaceFor(registry, selected, newChatCwd(conn));
+  return target == null ? null : workspaceTitle(target);
+});
+
+/// Creates a conversation in [workspaceId] when the caller picked one
+/// (selected or inferred), else in [cwd] (null lets the host pick). Falls
+/// back to [cwd] if the workspace was removed in the meantime.
 Future<SessionCreated> createSessionInWorkspace(DshClient client, String? workspaceId, {String? cwd}) async {
   if (workspaceId == null) return client.createSession(cwd: cwd);
   try {

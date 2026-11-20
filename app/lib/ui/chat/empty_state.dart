@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../pets/pet_signals.dart' show petTakesWhaleProvider;
+import '../../state/workspaces_state.dart' show newChatWorkspaceTitleProvider;
 import '../common/expand_reveal.dart';
 import '../common/fade_in.dart';
 import '../theme/app_icons.dart';
@@ -116,7 +117,8 @@ class ChatEmptyState extends StatelessWidget {
   final ChatIdleAction? idle;
   final ValueChanged<ChatSuggestion> onSuggestion;
 
-  /// The workspace the new conversation starts in (null: the default).
+  /// The workspace the new conversation starts in (null: 全部对话; the chip
+  /// is still shown so it can be picked).
   final String? workspace;
 
   /// Switches [workspace].
@@ -167,17 +169,26 @@ class ChatEmptyState extends StatelessWidget {
         ? EmptyPrimaryPill(key: const ValueKey('reconnect'), label: l10n.viewEmptyReconnect, onTap: retry)
         : idle != null
         ? EmptyPrimaryPill(key: ValueKey(idle.label), label: idle.label, onTap: idle.onTap)
-        : workspace != null && connected
-        ? ConstrainedBox(
-            key: const ValueKey('workspace'),
-            constraints: const BoxConstraints(maxWidth: 280),
-            child: QuietChip(
-              icon: AppIcons.workspace,
-              label: l10n.viewEmptyWorkspace(workspace!),
-              trailing: onWorkspace == null ? null : AppIcons.expand,
-              onTap: onWorkspace,
-              onTapHint: l10n.viewEmptySwitchWorkspace,
-            ),
+        : connected
+        ? Consumer(
+            builder: (context, ref, _) {
+              // No selection still gets an entry point, and it names the
+              // workspace the next chat will actually start in (relay has no
+              // cwd, so the Host's default-workspace is the target there).
+              final inferred = workspace == null ? ref.watch(newChatWorkspaceTitleProvider) : null;
+              final label = workspace ?? inferred;
+              return ConstrainedBox(
+                key: const ValueKey('workspace'),
+                constraints: const BoxConstraints(maxWidth: 280),
+                child: QuietChip(
+                  icon: AppIcons.workspace,
+                  label: label == null ? l10n.remoteWorkspaceAllChats : l10n.viewEmptyWorkspace(label),
+                  trailing: onWorkspace == null ? null : AppIcons.expand,
+                  onTap: onWorkspace,
+                  onTapHint: l10n.viewEmptySwitchWorkspace,
+                ),
+              );
+            },
           )
         : null;
 
