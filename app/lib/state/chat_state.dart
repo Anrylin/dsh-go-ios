@@ -495,7 +495,9 @@ class ChatController extends Notifier<ChatState> {
   /// Bounded retries for a replay that gave up without handing anything over.
   /// Counts are per queued id and clear with the id when it settles.
   final _replayRestarts = <String, int>{};
-  Object? _restartRef;
+
+  /// One token per queued id: a restart for one draft must not cancel another.
+  final _restartTokens = <String, Object>{};
   Object _approvalScope = Object();
   final _commands = CommandLog();
   var _localCommands = 0;
@@ -587,7 +589,7 @@ class ChatController extends Notifier<ChatState> {
         _restartIds.clear();
         _offlineDeliveryAllowed.clear();
         _replayRestarts.clear();
-        _restartRef = null;
+        _restartTokens.clear();
         _replayHandedOff = false;
         _replayOwner = null;
         ref.read(pendingSendOutboxProvider.future).then((box) => box.clearAccount(previous)).ignore();
@@ -609,7 +611,7 @@ class ChatController extends Notifier<ChatState> {
       _offlineQueuedIds.clear();
       _offlineDeliveryAllowed.clear();
       _replayRestarts.clear();
-      _restartRef = null;
+      _restartTokens.clear();
       _defaultModelSaveFailed = false;
       _approvalScope = Object();
       _autoApprove = false;
@@ -649,7 +651,7 @@ class ChatController extends Notifier<ChatState> {
       // Invalidation runs before a lazy rebuild replaces the still-mounted Ref.
       _modelChange = null;
       _listenOwner = Object();
-      _restartRef = null;
+      _restartTokens.clear();
       _followEpoch?.retire();
       if (!_syncReady.isCompleted) _syncReady.complete(false);
       release?.cancel();
@@ -753,7 +755,7 @@ class ChatController extends Notifier<ChatState> {
     _offlineQueuedIds.clear();
     _offlineDeliveryAllowed.clear();
     _replayRestarts.clear();
-    _restartRef = null;
+    _restartTokens.clear();
     _approvalHost = null;
     _approvalAgent = null;
   }
@@ -898,6 +900,7 @@ class ChatController extends Notifier<ChatState> {
       _restartIds.remove(id);
       _offlineDeliveryAllowed.remove(id);
       _replayRestarts.remove(id);
+      _restartTokens.remove(id);
       if (key != null) (byKey[key] ??= []).add(id);
     }
     if (byKey.isEmpty) return;
@@ -1038,7 +1041,7 @@ class ChatController extends Notifier<ChatState> {
     // until that stale replay unwinds makes this listener skip the very ids it
     // is supposed to pick up.
     _replayRequestedIds.clear();
-    _restartRef = null;
+    _restartTokens.clear();
     _watchEnded = false;
     _watchRetryTimer?.cancel();
     final key = _currentAgentKey();
@@ -1649,12 +1652,21 @@ class ChatController extends Notifier<ChatState> {
         if (!current()) break;
         final allowed = _offlineDeliveryAllowed[entry.requestId];
         if (allowed != null && !allowed()) {
-          // The route prepared for this draft is gone. It can never be
-          // delivered, so drop it quietly instead of leaving a retry bubble.
+          // Same semantics as the live route refusal in send(): the prepared
+          // phone source changed, so this entry can no longer be delivered by
+          // any replay. Say so, drop the durable copy, and leave the draft as
+          // a bubble the person can retry instead of losing it silently.
+          const refusal = DshClosedException('Prepared phone route source changed');
           _forgetOutbox([entry.requestId]);
           _offlineQueuedIds.remove(entry.requestId);
-          _pending = List.unmodifiable(_pending.where((p) => p.requestId != entry.requestId));
-          if (ref.mounted) state = state.copyWith(pending: _placePending());
+          _offlineDeliveryAllowed.remove(entry.requestId);
+          _pending = List.unmodifiable([
+            for (final p in _pending)
+              if (p.requestId == entry.requestId) p.failedAt(0) else p,
+          ]);
+          if (ref.mounted) {
+            state = state.copyWith(pending: _placePending(), error: _sendFailure(refusal), clearNotice: true);
+          }
           continue;
         }
         if (!await send(
@@ -1681,13 +1693,10 @@ class ChatController extends Notifier<ChatState> {
     _releaseReplayRequest(only, listener);
     for (final id in retried) {
       _replayRestarts.remove(id);
+      _restartTokens.remove(id);
     }
     if (current() && retried.length != entries.length) {
-      _restartQueuedReplay(
-        client,
-        entries.map((e) => e.requestId).toSet().difference(retried),
-        startup: only == null,
-      );
+      _restartQueuedReplay(client, entries.map((e) => e.requestId).toSet().difference(retried), startup: only == null);
     }
   }
 
@@ -1702,11 +1711,7 @@ class ChatController extends Notifier<ChatState> {
   /// A replay that never reached a Host retries a few times on the same link.
   /// Without this, a load hiccup or a sync that timed out leaves an explicitly
   /// queued message waiting for a connection event that may never arrive.
-  void _restartQueuedReplay(
-    DshClient client,
-    Set<String> ids, {
-    bool startup = false,
-  }) {
+  void _restartQueuedReplay(DshClient client, Set<String> ids, {bool startup = false}) {
     if (ids.isEmpty || !ref.mounted || !identical(client, _client)) return;
     final restartable = <String>{};
     for (final id in ids) {
@@ -1719,14 +1724,35 @@ class ChatController extends Notifier<ChatState> {
     }
     if (restartable.isEmpty) return;
     final owner = ref;
-    final token = _restartRef = Object();
-    Timer(const Duration(milliseconds: 400), () {
-      if (!owner.mounted || !identical(token, _restartRef) || !identical(client, _client)) return;
-      if (restartable.any(_replayRequestedIds.contains)) return;
-      unawaited(
-        _replayOutbox(client, _listenOwner, _syncScope, key: _currentAgentKey(), only: restartable),
-      );
-    });
+    final scope = _syncScope;
+    for (final id in restartable) {
+      // Startup replays were not marked as offline sends, but a bounded retry
+      // tracks them the same way from here on.
+      if (startup) _offlineQueuedIds.add(id);
+      final token = _restartTokens[id] = Object();
+      Timer(const Duration(milliseconds: 400), () async {
+        bool stale() =>
+            !owner.mounted ||
+            !identical(token, _restartTokens[id]) ||
+            !identical(client, _client) ||
+            !identical(scope, _syncScope);
+        // A different replay may have delivered this id while the timer waited.
+        if (stale() || !_offlineQueuedIds.contains(id) || _replayRequestedIds.contains(id)) return;
+        final PendingOutbox box;
+        try {
+          box = await owner.read(pendingSendOutboxProvider.future);
+        } catch (_) {
+          return;
+        }
+        final durable = await box.store.load(_pendingKey());
+        if (stale() || !_offlineQueuedIds.contains(id) || _replayRequestedIds.contains(id)) return;
+        if (!durable.any((e) => e.requestId == id)) {
+          _offlineQueuedIds.remove(id);
+          return;
+        }
+        unawaited(_replayOutbox(client, _listenOwner, _syncScope, key: _currentAgentKey(), only: {id}));
+      });
+    }
   }
 
   /// Called by the offline send after its durable write. If the replacement

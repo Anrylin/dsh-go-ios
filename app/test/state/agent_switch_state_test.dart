@@ -262,13 +262,19 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     await container.pump();
 
+    final settled = container.read(chatProvider('s1'));
     expect(client.prompts, isEmpty);
+    // A refused route is a definite send failure: the draft stays visible as
+    // an editable retry bubble and the person sees why it did not go out.
+    expect(settled.error, isNotNull);
+    expect(settled.pending, hasLength(1));
+    expect(settled.pending.single.failed, isTrue);
+    expect(settled.pending.single.text, 'route may change');
     final outbox = await container.read(pendingSendOutboxProvider.future);
     final entries = await outbox.store.load(
       PendingSendKey(account: localChatOwner, host: 'relay:h:DSH', session: 's1'),
     );
     expect(entries, isEmpty);
-    expect(container.read(chatProvider('s1')).pending, isEmpty);
   });
 
   test('a second listen before sync does not lose a queued replay', () async {
