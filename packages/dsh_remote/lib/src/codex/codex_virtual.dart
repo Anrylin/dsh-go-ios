@@ -377,7 +377,7 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
       }
       stream.push(<String, Object?>{
         'type': 'archived',
-        'archivedSessionIds': value.sessions.where((session) => session['archived'] == true).map((session) => session['id']).toList(),
+        'archivedSessionIds': _archivedSessionIds(value),
       });
     }
   }
@@ -515,7 +515,7 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
         final catalog = await refreshCatalog();
         return <String, Object?>{
           'items': codexNativeVisibleWorkspaces(catalog, selectedWorkspaceId).map(codexNativeWorkspace).toList(),
-          'archivedSessionIds': catalog.sessions.where((session) => session['archived'] == true).map((session) => session['id']).toList(),
+          'archivedSessionIds': _archivedSessionIds(catalog),
           'pinnedSessionIds': <Object?>[],
         };
 
@@ -540,6 +540,9 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
 
       case 'workspace/archiveSession':
         return _archiveSession(request);
+
+      case 'workspace/unarchiveSession':
+        return _unarchiveSession(request);
 
       case 'session/list':
         return <String, Object?>{'items': await _sessionSummaries()};
@@ -689,15 +692,46 @@ class CodexVirtualHarness implements CodexLiveContext, CodexEventContext {
     return <String, Object?>{'workspace': codexNativeWorkspace(workspace)};
   }
 
+  /// Every archived Session id known to the catalog. `archiveSession` and
+  /// `unarchiveSession` must return the *whole* set: `DshSessionsState` stores
+  /// the reply verbatim as its archived-id set, so replying with only the id
+  /// just touched would silently forget every previously archived thread.
+  List<Object?> _archivedSessionIds(CodexCatalog value) => value.sessions
+      .where((session) => session['archived'] == true)
+      .map((session) => session['id'])
+      .toList();
+
   Future<Object?> _archiveSession(JsonMap request) async {
     final sessionId = codexRequiredString(request['sessionId'], 'sessionId');
     final threadId = codexNativeThreadId(sessionId);
     final client = await api;
+    // `sessions_state` asks for `stopActivity: true` and the UI promises that
+    // running work is stopped. Mirror `_cancel` so the promise is kept; any
+    // App Server refusal propagates as an explicit error instead of a silent
+    // archive that would leave the turn running behind the scenes.
+    if (request['stopActivity'] == true) {
+      final turnId = _activeTurnId(threadId);
+      if (turnId != null) {
+        await client.request('turn/interrupt', <String, Object?>{'threadId': threadId, 'turnId': turnId});
+      }
+    }
     await client.request('thread/archive', <String, Object?>{'threadId': threadId});
     historyCache.removeThread(threadId);
     final catalog = await refreshCatalog(force: true);
     publishWorkspaceBaseline(catalog);
-    return <String, Object?>{'archivedSessionIds': <Object?>[sessionId]};
+    return <String, Object?>{'archivedSessionIds': _archivedSessionIds(catalog)};
+  }
+
+  /// Inverse of [_archiveSession]: restores a virtual CodeX session without
+  /// letting a `codex:` id reach the physical DSH carrier.
+  Future<Object?> _unarchiveSession(JsonMap request) async {
+    final sessionId = codexRequiredString(request['sessionId'], 'sessionId');
+    final threadId = codexNativeThreadId(sessionId);
+    await (await api).threadUnarchive(threadId);
+    historyCache.removeThread(threadId);
+    final catalog = await refreshCatalog(force: true);
+    publishWorkspaceBaseline(catalog);
+    return <String, Object?>{'archivedSessionIds': _archivedSessionIds(catalog)};
   }
 
   Future<List<JsonMap>> _sessionSummaries() async {
@@ -1285,6 +1319,7 @@ class CodexVirtualCarrier extends DshCarrier implements DshCarrierWrapper {
     'workspace/insertBefore',
     'workspace/insertSessionBefore',
     'workspace/archiveSession',
+    'workspace/unarchiveSession',
     'workspace/follow',
     'session/list',
     'session/projections',

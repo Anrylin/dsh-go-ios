@@ -71,7 +71,7 @@ class AgentCapabilities {
   final bool rename;
   final bool workspaceFiles;
 
-  // Per-Agent gaps.
+  // Per-Agent gaps: AGY has no session archive; CodeX serves it virtually.
   final bool archive;
   final bool fork;
 
@@ -104,8 +104,9 @@ class AgentCapabilities {
   );
 
   /// CodeX through its App Server: conversations, workspaces, models,
-  /// approvals, attachments, rename/fork and workspace files. No DSH plugin,
-  /// Bot, automation, terminal, job, skill, subagent or archive surface.
+  /// approvals, attachments, rename/fork, workspace files and session archive
+  /// (virtual `workspace/archiveSession` → CodeX `thread/archive`). No DSH
+  /// plugin, Bot, automation, terminal, job, skill or subagent surface.
   static const AgentCapabilities codex = AgentCapabilities(
     agent: RemoteAgent.codex,
     bots: false,
@@ -126,7 +127,7 @@ class AgentCapabilities {
     permissions: true,
     attachments: true,
     rename: true,
-    archive: false,
+    archive: true,
     fork: true,
     workspaceFiles: true,
     reference: false,

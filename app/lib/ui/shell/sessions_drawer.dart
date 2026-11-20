@@ -617,8 +617,8 @@ class _SessionList extends ConsumerWidget {
                       title: Text(context.l10n.shellMultiSelect),
                       onTap: () => Navigator.pop(sheet, 'select'),
                     ),
-                    // Archive is a native DSH endpoint: CodeX and AGY have no
-                    // equivalent, so the tile is not offered there at all.
+                    // CodeX serves archive through the virtual Harness; AGY
+                    // has no equivalent, so the tile is hidden there.
                     if (ref.read(agentCapabilitiesProvider).archive)
                       ListTile(
                         leading: const Icon(AppIcons.archive),

@@ -104,7 +104,6 @@ void main() {
         expect(caps.skills, isFalse);
         expect(caps.subagents, isFalse);
         expect(caps.tokenUsage, isFalse);
-        expect(caps.archive, isFalse, reason: 'neither virtual Agent implements session archive');
         expect(caps.models, isTrue);
         expect(caps.permissions, isTrue);
         expect(caps.attachments, isTrue);
@@ -115,6 +114,12 @@ void main() {
         expect(caps.supportsFeature('ds-bot'), isFalse);
         expect(caps.supportsFeature('plugin-panel:x#y'), isFalse, reason: 'unknown ids are DSH-only');
       }
+      expect(
+        AgentCapabilities.codex.archive,
+        isTrue,
+        reason: 'CodeX maps archive to workspace/archiveSession → thread/archive',
+      );
+      expect(AgentCapabilities.agy.archive, isFalse, reason: 'AGY has no session archive');
     });
 
     test('DSH keeps everything and never reports an unsupported known entry', () {
