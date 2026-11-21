@@ -186,6 +186,7 @@ class FakeChatController extends ChatController {
   final sent = <String>[];
   final sentAttachments = <List<DraftAttachment>>[];
   final sentModes = <SendMode>[];
+  final queuedOffline = <bool>[];
   final steered = <String>[];
   final withdrawn = <String>[];
   final sentNow = <String>[];
@@ -216,10 +217,12 @@ class FakeChatController extends ChatController {
     PendingSendKey? replayKey,
     Future<bool> Function(String requestId)? beforeDeliver,
     bool Function()? deliveryAllowed,
+    bool queueOffline = false,
   }) async {
     sent.add(text);
     sentAttachments.add(attachments);
     sentModes.add(mode);
+    queuedOffline.add(queueOffline);
     return await (sendResult ?? Future.value(true));
   }
 

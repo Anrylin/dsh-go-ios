@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:dsh_remote/dsh_remote.dart' show RemoteAgent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,7 +32,7 @@ import '../../state/draft_store.dart';
 import '../../state/drawer_view_state.dart';
 import '../../state/engine_control.dart';
 import '../../state/engine_settings_state.dart' show engineSettingsProvider;
-import '../../state/hosts_state.dart' show HostKind, activeHostProvider, hostLabel;
+import '../../state/hosts_state.dart' show HostKind, HostRef, activeHostProvider, hostLabel;
 import '../../state/media_generation.dart';
 import '../../state/mention_state.dart';
 import '../../state/models_state.dart';
@@ -100,6 +101,23 @@ import 'widgets/permission_pill.dart';
 import 'widgets/plus_panel.dart';
 import 'widgets/quote_chip.dart';
 import 'widgets/read_only_bar.dart';
+
+/// True only when an RPC can actually reach the selected Host's selected
+/// Agent. Everything else — no connection, a retry in flight, an error with
+/// the old client retained, a mux that dropped, or an Agent mismatch — goes
+/// through the durable offline queue instead of blocking the composer.
+bool _linkIsDown(
+  AsyncValue<HostConnection?> connection,
+  HostRef host,
+  RemoteAgent agent,
+) {
+  if (connection.isLoading || connection.hasError) return true;
+  final current = connection.value;
+  if (current == null || current.agent != agent) return true;
+  if (current.kind != host.kind) return true;
+  if (host.kind != HostKind.local && current.hostId != host.id) return true;
+  return current.client.mux.state != DshConnectionState.connected;
+}
 
 /// 聊天页:玻璃顶栏 + 消息列表 + 玻璃输入条。
 ///
@@ -201,6 +219,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// Only this wait may resume a send or clear the composer's busy state.
   Object? _syncWait;
+
+  /// A send is in flight (including the offline durable write). Blocks a
+  /// second tap until the draft has actually been handed off.
+  bool _sending = false;
 
   /// How the last turn ended, for the header's live region.
   String? _spoken;
@@ -436,6 +458,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _send({SendMode mode = SendMode.now}) async {
+    // `_ensureSession` and the offline durable write both await. Without a
+    // synchronous gate, two taps in one frame can both pass the input checks
+    // before either clears the draft, queuing the same prompt twice.
+    if (_sending) return;
+    _sending = true;
+    try {
     // The `@` picker is open on a typed name: sending picks its marked row.
     if (_mentions.pickHighlighted()) return;
     final typed = _input.text.trim();
@@ -488,7 +516,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final sessionId = await _ensureSession(isCurrent: ownsDraft);
     if (sessionId == null || !ownsDraft() || _draftKey != sessionId) return;
     final chat = ref.read(chatProvider(sessionId).notifier);
-    if (!ref.read(chatProvider(sessionId)).controlReady) {
+    // No usable link: ChatController.send takes its offline path. waitForSync()
+    // cannot help there (it returns false without a client, and only waits on
+    // a dead one otherwise), so do not hold the draft hostage to a transport
+    // that is down — the controller replays it when the link comes back.
+    final offlineQueued = _linkIsDown(
+      ref.read(activeConnectionProvider),
+      ref.read(activeHostProvider),
+      ref.read(activeAgentProvider),
+    );
+    if (!offlineQueued && !ref.read(chatProvider(sessionId)).controlReady) {
       if (mode == SendMode.interrupt) return;
       // session/create can finish before its first follow snapshot. Keep
       // the draft visible while waiting; a timeout must not eat the message.
@@ -533,7 +570,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             current.openApproval == null) {
       ok = await chat.answer(request, [QuestionAnswer(request.questions.single.id, custom: text)]);
     } else {
-      ok = await chat.send(text, attachments: drafts, mode: mode);
+      ok = await chat.send(text, attachments: drafts, mode: mode, queueOffline: offlineQueued);
       // A generation request, counted on top of its turn.
       if (ok && generate != null && mounted) ref.read(usageStatsProvider.notifier).count(UsageCount.gen);
     }
@@ -541,6 +578,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     // A successful Agent-scoped offline queue must never be mistaken for a
     // failure just because the old client was retired in the meantime.
     if (!ok && mounted && identical(_draftScope, scope)) _giveBack(sessionId, typed, drafts, quote: quote);
+    } finally {
+      _sending = false;
+    }
   }
 
   // A failed send belongs to the Host that accepted it. The controller may
@@ -1347,6 +1387,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     // ends the window at once — it must not be swallowed.
     final agentSwitching = ref.watch(agentSwitchReconnectProvider);
     final activeHost = ref.watch(activeHostProvider);
+    final activeAgent = ref.watch(activeAgentProvider);
     final connAsync = ref.watch(activeConnectionProvider);
     final conn = connAsync.value;
     final silentWindow = agentSwitching && !connAsync.hasError;
@@ -1470,14 +1511,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       });
     }
 
-    // 输入条在 Agent 切换的静默窗口里照常可用:同一个 Host、同一个会话,只是
-    // 链路在换。发送会进目标 Agent 的离线队列并显示成待发气泡(没有 client 时
-    // ChatController.send 走 _sendOffline),不是失败,也不该让人打完的字无处可去。
-    // 只对已经在这个 Host 上的会话放开:没有会话时连创建都需要 client,仍按未连接
-    // 处理。真正的重连(conn 还在、状态是 reconnecting)和失败(hasError)不受影响。
+    // 输入条在链路不可用时也照常可发:同一个 Host、同一个已有会话,只是连接
+    // 断了或在换。ChatController.send 没有 client 时走 _sendOffline,把信写进
+    // 当前 Host/Agent 的离线队列并显示成待发气泡,重连后由 _replayOutbox 补发;
+    // 而不是让人打完的字无处可去。新对话仍需要 client 才能 session/create,
+    // 所以只对已有 sessionId 放开;连不上/失败的状态照旧显示,不被吞掉。
+    final linkDown = _linkIsDown(connAsync, activeHost, activeAgent);
+    final offlineSendable = linkDown && sessionId != null && chat?.singleQuestion != true;
     final switchSendable = silentWindow && sessionId != null;
-    final composerConnected = conn != null || switchSendable;
-    final composerReady = switchSendable || (chat?.controlReady ?? true);
+    final composerConnected = conn != null || switchSendable || offlineSendable;
+    final composerReady = switchSendable || offlineSendable || (chat?.controlReady ?? true);
     final title = switch (chat?.title ?? listedTitle) {
       final t? when t.trim().isNotEmpty => chatTitleShown(t.trim()),
       _ => l10n.commonNewChat,
@@ -1882,7 +1925,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     running: chat?.running ?? false,
                                     stopping: chat?.stopping ?? false,
                                     sessionReady: composerReady,
-                                    busy: _creating != null || _syncWait != null,
+                                    busy: _creating != null || _syncWait != null || _sending,
                                     // The header, the tool row and the strip
                                     // already say an approval waits: the hint
                                     // stays the plain one.
