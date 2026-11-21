@@ -534,12 +534,13 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
   final offlineHostId = '$account|$scopeId';
   final workspaceKey = prefs.selected == null ? 'all' : 'workspace:${prefs.selected}';
   // Offline is a normal state, not a loading state: paint the last confirmed
-  // list read-only instead of leaving the Drawer on a skeleton.
+  // list read-only instead of leaving the Drawer on a skeleton. Read the
+  // snapshot on every rebuild: a reconnect can keep the live connection while
+  // the list reloads under a different identity/cache key, and that gap
+  // must not empty the Drawer either.
   final offlineMode = connection == null;
-  final offline = offlineMode
-      ? OfflineSessionCache.instance.read(offlineHostId, workspaceKey) ??
-          (workspaceKey == 'all' ? null : OfflineSessionCache.instance.read(offlineHostId, 'all'))
-      : null;
+  final offlineSnapshot = OfflineSessionCache.instance.read(offlineHostId, workspaceKey) ??
+      (workspaceKey == 'all' ? null : OfflineSessionCache.instance.read(offlineHostId, 'all'));
   final key = prefs.loaded
       ? readListKey(identity, ReadListKind.sessions, workspaceKey)
       : null;
@@ -554,12 +555,14 @@ final drawerScopeProvider = Provider<DrawerScope?>((ref) {
   final pending = ref.watch(workspaceFilterPendingProvider);
   final workspaceKnown = prefs.selected == null || registryCurrent && registry.ready && workspace != null;
   if (!validSource || pending || !workspaceKnown || cache.origin(all) != null && !prefs.loaded) {
-    final cached = cache.get<CachedSessions>(key) ?? offline?.toCached();
+    final memoryCached = cache.get<CachedSessions>(key);
+    final cached = memoryCached ?? offlineSnapshot?.toCached();
     if (cached == null) return null;
     // Once a registry is known, deletion or a changed path/membership version
-    // invalidates the old projection. An offline snapshot is deliberately the
-    // last confirmed view, so a changed folder version must not erase it.
-    if (offline == null &&
+    // invalidates an in-memory projection. The persisted snapshot is the last
+    // confirmed view, so a version change during a sync must not erase it.
+    final fromSnapshot = offlineSnapshot != null && (offlineMode || memoryCached == null);
+    if (!fromSnapshot &&
         prefs.selected != null &&
         registryCurrent &&
         registry.ready &&
