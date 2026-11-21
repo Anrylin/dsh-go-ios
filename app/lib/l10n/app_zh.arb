@@ -7643,6 +7643,7 @@
     }
   },
   "readListUpdating": "更新中",
+  "readListOffline": "离线",
   "readListFailed": "未更新",
   "remoteStartupSection": "启动",
   "remoteAutoConnectOnStartup": "连接上次使用的主机",

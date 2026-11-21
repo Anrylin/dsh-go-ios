@@ -16,22 +16,23 @@ void main() {
   setUp(() => AppLocale.use(AppLocale.zhCN));
   tearDown(() => AppLocale.use(AppLocale.zhCN));
 
-  test('read list headings never append 上次结果, and offline adds no second notice', () {
+  test('read list headings never append 上次结果, and offline stays a one-word placeholder', () {
     expect(readListStatusText(ReadListStatus.current), '');
-    expect(readListStatusText(ReadListStatus.offline), '');
-    // 需求⑩: no 「上次结果」 negative wording anywhere.
+    // 需求⑩: no 「上次结果」 suffix; the word 离线 itself must stay —
+    // the drawer uses it as the empty-list placeholder while the host is down.
+    expect(readListStatusText(ReadListStatus.offline), '离线');
     expect(readListStatusText(ReadListStatus.updating), '更新中');
     expect(readListStatusText(ReadListStatus.failed), '未更新');
+    // A heading never borrows the offline placeholder.
     expect(readListHeading('模型', ReadListStatus.offline), '模型');
     expect(readListHeading('模型', ReadListStatus.current), '模型');
-    // Offline alone is silent; updating/failed keep a single quiet word.
     expect(readListHeading('模型', ReadListStatus.updating), '模型 · 更新中');
     expect(readListHeading('模型', ReadListStatus.failed), '模型 · 未更新');
   });
 
-  test('English read list copy keeps updating/failed and drops offline noise', () {
+  test('English read list copy keeps a one-word offline placeholder', () {
     AppLocale.use(AppLocale.en);
-    expect(readListStatusText(ReadListStatus.offline), '');
+    expect(readListStatusText(ReadListStatus.offline), 'Offline');
     expect(readListStatusText(ReadListStatus.failed), 'Not updated');
     expect(readListStatusText(ReadListStatus.updating), 'Updating');
   });

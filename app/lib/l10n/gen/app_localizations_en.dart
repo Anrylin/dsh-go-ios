@@ -12875,6 +12875,9 @@ class L10nEn extends L10n {
   String get readListUpdating => 'Updating';
 
   @override
+  String get readListOffline => 'Offline';
+
+  @override
   String get readListFailed => 'Not updated';
 
   @override

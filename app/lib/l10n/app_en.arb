@@ -3732,6 +3732,7 @@
   "plugViewBadTrend": "trend takes 2–{max} numbers (nulls allowed); ignored",
   "plugViewGalleryPicture": "Picture {index}",
   "readListUpdating": "Updating",
+  "readListOffline": "Offline",
   "readListFailed": "Not updated",
   "remoteStartupSection": "On launch",
   "remoteAutoConnectOnStartup": "Connect to the last host",

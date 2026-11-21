@@ -12260,6 +12260,9 @@ class L10nZh extends L10n {
   String get readListUpdating => '更新中';
 
   @override
+  String get readListOffline => '离线';
+
+  @override
   String get readListFailed => '未更新';
 
   @override

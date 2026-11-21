@@ -1,4 +1,5 @@
 {
   "readListUpdating": "Updating",
+  "readListOffline": "Offline",
   "readListFailed": "Not updated"
 }

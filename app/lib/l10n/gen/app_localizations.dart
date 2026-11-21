@@ -22484,6 +22484,12 @@ abstract class L10n {
   /// **'更新中'**
   String get readListUpdating;
 
+  /// No description provided for @readListOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线'**
+  String get readListOffline;
+
   /// No description provided for @readListFailed.
   ///
   /// In zh, this message translates to:
