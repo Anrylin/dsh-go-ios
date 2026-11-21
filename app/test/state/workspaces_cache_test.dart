@@ -9,7 +9,7 @@ import 'package:dsh_app/state/agent_selection_state.dart' show AgentSelection, A
 import 'package:dsh_app/state/drawer_view_state.dart' show DrawerViewController;
 import 'package:dsh_app/state/hosts_state.dart' show ActiveHostController, HostRef, activeHostProvider;
 import 'package:dsh_app/state/read_list_cache.dart';
-import 'package:dsh_app/state/read_list_identity.dart' show ReadListIdentity;
+import 'package:dsh_app/state/read_list_identity.dart' show ReadListIdentity, readListLiveConnectionProvider;
 import 'package:dsh_app/state/workspaces_state.dart'
     show
         WorkspacePrefs,
@@ -99,6 +99,21 @@ ProviderContainer _container(String? selected, List<Workspace> workspaces) {
 
 void main() {
   final relay = HostRef.relay('h1');
+
+  test('workspace state rebuilds after its previous baseline completed', () async {
+    final container = ProviderContainer(
+      overrides: [readListLiveConnectionProvider.overrideWithValue(null)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(workspacesProvider.notifier);
+    final first = controller.baseline;
+    await first;
+
+    container.invalidate(workspacesProvider);
+
+    expect(container.read(workspacesProvider).workspaces, isEmpty);
+    expect(controller.baseline, isNot(same(first)));
+  });
 
   test('relay display keys isolate the Agent', () {
     expect(WorkspacePrefsController.keyFor(relay, agent: RemoteAgent.codex),

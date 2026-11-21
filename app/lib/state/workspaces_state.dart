@@ -108,7 +108,7 @@ class WorkspacesController extends Notifier<WorkspacesState> {
   @override
   WorkspacesState build() {
     final r = ref;
-    _baseline?.complete();
+    completeBaseline();
     _baseline = Completer<void>();
     _rows.clear();
     _order = const [];
