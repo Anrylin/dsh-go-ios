@@ -210,6 +210,51 @@ void main() {
     },
   );
 
+  test('forced offline send does not replay through a stale mux', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      ActiveHostController.prefsKey: HostRef.relay('h').encode(),
+    });
+    final cache = _FakeCache();
+    final client = _FakeClient();
+    final container = ProviderContainer(
+      overrides: [
+        memoryPendingOutboxOverride(),
+        operatingSystemProvider.overrideWithValue('ios'),
+        transcriptCacheProvider.overrideWith((ref) async => cache),
+        activeConnectionProvider.overrideWith((ref) => ref.watch(_connectionStateProvider)),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      client.events.close();
+    });
+    container.read(activeHostProvider.notifier).select(HostRef.relay('h'));
+    container.read(_connectionStateProvider.notifier).set(
+      AsyncData<HostConnection?>(
+        HostConnection(
+          client: client,
+          kind: HostKind.relay,
+          hostId: 'h',
+          agent: RemoteAgent.dsh,
+          isLocal: false,
+        ),
+      ),
+    );
+    container.listen(chatProvider('s1'), (_, _) {});
+    await container.pump();
+    await container.pump();
+
+    final ok = await container.read(chatProvider('s1').notifier).send('stale mux', queueOffline: true);
+    expect(ok, isTrue);
+    expect(client.prompts, isEmpty);
+
+    final outbox = await container.read(pendingSendOutboxProvider.future);
+    final entries = await outbox.store.load(
+      PendingSendKey(account: localChatOwner, host: 'relay:h:DSH', session: 's1'),
+    );
+    expect(entries.single.text, 'stale mux');
+  });
+
   test('offline send keeps its route check for the replay', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       ActiveHostController.prefsKey: HostRef.relay('h').encode(),

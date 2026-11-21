@@ -2302,9 +2302,13 @@ class ChatController extends Notifier<ChatState> {
       streamLost: false,
     );
     // If the link came back during the durable write, start this one replay
-    // now; the next [_listen] handles the case where it did not.
+    // now; the next [_listen] handles the case where it did not. A client
+    // object can outlive its carrier (reconnecting/closed), so check the mux
+    // before handing the message back to the wire.
     final readyClient = _client;
-    if (readyClient != null) _kickTargetedReplay(readyClient, requestId);
+    if (readyClient != null && readyClient.mux.state == DshConnectionState.connected) {
+      _kickTargetedReplay(readyClient, requestId);
+    }
     return true;
   }
 
@@ -2323,6 +2327,9 @@ class ChatController extends Notifier<ChatState> {
   /// side channel keyed by that id (伙伴小屋's context). Its failure fails the
   /// send like any other; false drops the send quietly.
   ///
+  /// [queueOffline] forces the durable queue even when a stale client object
+  /// is still held (mux reconnecting, an Agent mismatch, a failed retry).
+  ///
   /// [replayRequestId] is the restart path only: the durable entry already
   /// carries the id DSH deduplicates, so no new one may be minted here.
   /// [replayKey] keeps a waited Codex send under the Agent that wrote it, even
@@ -2336,8 +2343,13 @@ class ChatController extends Notifier<ChatState> {
     bool Function()? deliveryAllowed,
     String? replayRequestId,
     PendingSendKey? replayKey,
+    bool queueOffline = false,
   }) async {
-    final client = _client;
+    // The UI can see a dropped link before the controller does (or while its
+    // old client object still exists). Sending through the offline path keeps
+    // the prompt and replays it once a live link is back, instead of waiting
+    // on a transport that is already gone.
+    final client = queueOffline ? null : _client;
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return false;
     final body = verbatim ? text : trimmed;

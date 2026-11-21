@@ -296,9 +296,11 @@ void main() {
     conn.set(const AsyncLoading<HostConnection?>());
     await pumpFrames(tester);
     expect(container.read(agentSwitchReconnectProvider), isFalse);
-    // The header never spells out connectivity; the composer stays neutral.
+    // The header never spells out connectivity. A loaded, targetable chat is
+    // no longer held in "preparing": it stays writable while the link retries.
     expect(find.text(appL10n.chatConnecting), findsNothing);
-    expect(find.text(appL10n.chatPreparingEllipsis), findsOneWidget);
+    expect(find.text(appL10n.chatPreparingEllipsis), findsNothing);
+    expect(find.text(appL10n.chatComposerHint), findsOneWidget);
   });
 
   testWidgets('a notice is not swallowed by the silent window', (tester) async {
