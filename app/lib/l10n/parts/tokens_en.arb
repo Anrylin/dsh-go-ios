@@ -18,7 +18,7 @@
     }
   },
   "statsCache": "cache",
-  "statsAvgRate": "Avg {rate} tok/s",
+  "statsAvgRate": "avg {rate} tok/s",
   "@statsAvgRate": {
     "placeholders": {
       "rate": {

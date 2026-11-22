@@ -4,8 +4,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:dsh_client/dsh_client.dart' as dsh;
-
 import '../../../l10n/l10n.dart';
 import '../../../state/chat_state.dart' show chatProvider;
 import '../../../state/run_pulse.dart';
@@ -24,16 +22,10 @@ class SessionStatsLine extends ConsumerWidget {
     // 和 pulse 分开订阅，吐字时不会反复算。
     final turns = ref.watch(chatProvider(sessionId).select((state) => state.turns));
     final average = conversationTokensPerSecond(turns);
-    final storedUsage = turns.reversed
-        .expand((turn) => turn.spans)
-        .map((span) => span.usage)
-        .where((usage) => usage != null && (usage.inputTokens > 0 || usage.outputTokens > 0))
-        .cast<dsh.TokenUsage>()
-        .firstOrNull;
     return ListenableBuilder(
       listenable: pulse,
       builder: (context, _) {
-        final usage = pulse.lastUsage ?? storedUsage;
+        final usage = pulse.lastUsage;
         final speed = pulse.displayTps;
         // 只有真正什么都没有才收起；速度停了要留着，平均速度也算数据。
         if (usage == null && speed <= 0 && average == null) return const SizedBox.shrink();
@@ -65,7 +57,6 @@ class SessionStatsLine extends ConsumerWidget {
           padding: const EdgeInsets.only(top: 2),
           child: Text.rich(
             TextSpan(children: spans),
-            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppType.tabular(

@@ -17337,7 +17337,7 @@ class L10nEn extends L10n {
 
   @override
   String statsAvgRate(String rate) {
-    return 'Avg $rate tok/s';
+    return 'avg $rate tok/s';
   }
 
   @override

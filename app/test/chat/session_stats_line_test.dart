@@ -31,11 +31,7 @@ void main() {
               start: t0,
               firstToken: t0.add(const Duration(seconds: 1)),
               end: t0.add(const Duration(seconds: 5)),
-              usage: const dsh.TokenUsage(
-                inputTokens: 100,
-                outputTokens: 200,
-                cacheReadTokens: 600,
-              ),
+              usage: const dsh.TokenUsage(inputTokens: 100, outputTokens: 200),
             ),
           ],
         ),
@@ -81,7 +77,8 @@ void main() {
 
   testWidgets('zh: cache · finished-output avg · retained rate, then the tick', (tester) async {
     await tester.pumpWidget(app(turnsWithAverage()));
-    expect(find.textContaining('↑100 · ↓200 · 缓存 600 · Avg 50 tok/s'), findsOneWidget);
+    expect(find.textContaining('缓存'), findsNothing);
+    expect(find.textContaining('平均 50 tok/s'), findsOneWidget);
     expect(find.textContaining(AppLocale.l10n.statsRateSettled), findsNothing);
 
     final pulse = pulseOf(tester);
@@ -89,7 +86,7 @@ void main() {
     await tester.pump();
     // Full order: input, output, cache, average, current/last rate.
     expect(
-      find.textContaining('↑1.2k · ↓340 · 缓存 600 · Avg 50 tok/s · 12 tok/s'),
+      find.textContaining('↑1.2k · ↓340 · 缓存 600 · 平均 50 tok/s · 12 tok/s'),
       findsOneWidget,
     );
     expect(find.textContaining(AppLocale.l10n.statsRateSettled), findsNothing);
@@ -102,7 +99,7 @@ void main() {
     expect(pulse.displayTps, greaterThan(0));
     expect(find.textContaining(AppLocale.l10n.statsRateSettled), findsOneWidget);
     expect(
-      find.textContaining('↑1.2k · ↓340 · 缓存 600 · Avg 50 tok/s · 12 tok/s'),
+      find.textContaining('↑1.2k · ↓340 · 缓存 600 · 平均 50 tok/s · 12 tok/s'),
       findsOneWidget,
     );
   });
@@ -110,13 +107,14 @@ void main() {
   testWidgets('en: cache · finished-output avg · retained rate, then the tick', (tester) async {
     AppLocale.use(AppLocale.en);
     await tester.pumpWidget(app(turnsWithAverage()));
-    expect(find.textContaining('↑100 · ↓200 · cache 600 · Avg 50 tok/s'), findsOneWidget);
+    expect(find.textContaining('avg 50 tok/s'), findsOneWidget);
+    expect(find.textContaining('平均'), findsNothing);
 
     final pulse = pulseOf(tester);
     feed(pulse, DateTime.now());
     await tester.pump();
     expect(
-      find.textContaining('↑1.2k · ↓340 · cache 600 · Avg 50 tok/s · 12 tok/s'),
+      find.textContaining('↑1.2k · ↓340 · cache 600 · avg 50 tok/s · 12 tok/s'),
       findsOneWidget,
     );
     expect(find.textContaining(AppLocale.l10n.statsRateSettled), findsNothing);
