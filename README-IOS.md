@@ -24,7 +24,7 @@ Payload/Runner.app/                      280 个文件
   Runner                                 arm64, 2.65 MB
   Info.plist                             CFBundleIdentifier = io.github.ccch1mneyyy.dshgo
                                          MinimumOSVersion   = 15.0
-                                         CFBundleVersion    = 1.0.9 (1)
+                                         CFBundleVersion    = 1.0.21 (1)
   Frameworks/App.framework/App           31.91 MB  Flutter AOT
   Frameworks/Flutter.framework           8.98 MB
   Frameworks/WebRTC.framework            11.77 MB
